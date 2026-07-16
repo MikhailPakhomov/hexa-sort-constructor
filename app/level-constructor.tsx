@@ -101,7 +101,7 @@ export default function LevelConstructor() {
   const [randomPacks, setRandomPacks] = useState<RandomPack[]>(INITIAL_RANDOM_PACKS);
   const [notice, setNotice] = useState("");
   const [contextMenu, setContextMenu] = useState<{ cellId: string; x: number; y: number } | null>(null);
-  const [packDraft, setPackDraft] = useState<{ name: string; items: number[] } | null>(null);
+  const [packDraft, setPackDraft] = useState<{ id?: string; name: string; items: number[] } | null>(null);
   const [draggingPackId, setDraggingPackId] = useState<string | null>(null);
   const [dragTargetCell, setDragTargetCell] = useState<string | null>(null);
 
@@ -186,6 +186,13 @@ export default function LevelConstructor() {
 
   function savePack() {
     if (!packDraft || packDraft.items.length === 0) return;
+    if (packDraft.id) {
+      const id = packDraft.id;
+      setPacks((value) => value.map((pack) => pack.id === id ? { ...pack, name: packDraft.name.trim() || pack.name, items: packDraft.items } : pack));
+      setSelectedPack(id);
+      setPackDraft(null);
+      return;
+    }
     let sequence = packs.length + 1;
     while (packs.some((pack) => pack.id === `pack-${sequence}`)) sequence += 1;
     const id = `pack-${sequence}`;
@@ -222,10 +229,6 @@ export default function LevelConstructor() {
       items.splice(to, 0, item);
       return { ...draft, items };
     });
-  }
-
-  function updatePack(id: string, patch: Partial<Pack>) {
-    setPacks((value) => value.map((pack) => pack.id === id ? { ...pack, ...patch } : pack));
   }
 
   function download() {
@@ -304,9 +307,8 @@ export default function LevelConstructor() {
             <div className="section-title"><div><h2>Библиотека пачек</h2><p>Перетащите пачку на активную ячейку поля</p></div><button className="icon-button" onClick={() => setPackDraft({ name: `Новая пачка ${packs.length + 1}`, items: [] })} title="Создать пачку">+</button></div>
             <div className="pack-list">{packs.map((pack) => <article className={`pack-card ${selectedPack === pack.id ? "selected" : ""} ${draggingPackId === pack.id ? "is-dragging" : ""}`} key={pack.id} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-hexa-pack", pack.id); setDraggingPackId(pack.id); setSelectedPack(pack.id); }} onDragEnd={() => { setDraggingPackId(null); setDragTargetCell(null); }} onClick={() => setSelectedPack(pack.id)} title="Перетащите пачку на активную ячейку поля">
               <PieceStack items={pack.items} colors={colors} small />
-              <div><input value={pack.name} onClick={(e) => e.stopPropagation()} onChange={(event) => updatePack(pack.id, { name: event.target.value })} /><small>{pack.id} · {pack.items.length} шт.</small></div>
-              <button onClick={(event) => { event.stopPropagation(); updatePack(pack.id, { items: [...pack.items, colors[pack.items.length % colors.length].id] }); }}>+</button>
-              <button disabled={pack.items.length <= 1} onClick={(event) => { event.stopPropagation(); updatePack(pack.id, { items: pack.items.slice(0, -1) }); }}>−</button>
+              <div><strong>{pack.name}</strong><small>{pack.id} · {pack.items.length} шт.</small></div>
+              <button className="pack-edit" draggable={false} onClick={(event) => { event.stopPropagation(); setPackDraft({ id: pack.id, name: pack.name, items: [...pack.items] }); }} title={`Редактировать ${pack.name}`} aria-label={`Редактировать ${pack.name}`}>✎</button>
             </article>)}</div>
 
             <div className="section-rule" />
@@ -347,7 +349,7 @@ export default function LevelConstructor() {
         </aside>
       </section>
       {packDraft && <div className="modal-backdrop" onPointerDown={() => setPackDraft(null)}><section className="pack-modal" onPointerDown={(event) => event.stopPropagation()}>
-        <header><div><p className="eyebrow">Библиотека пачек</p><h2>Новая пачка</h2></div><button onClick={() => setPackDraft(null)} aria-label="Закрыть">×</button></header>
+        <header><div><p className="eyebrow">Библиотека пачек</p><h2>{packDraft.id ? "Редактирование пачки" : "Новая пачка"}</h2></div><button onClick={() => setPackDraft(null)} aria-label="Закрыть">×</button></header>
         <label className="draft-name">Название пачки<input autoFocus value={packDraft.name} onChange={(event) => setPackDraft({ ...packDraft, name: event.target.value })} /></label>
         <div className="pack-editor">
           <div className="draft-palette"><h3>Цвета</h3><p>Перетащите цвет в стопку или нажмите на него</p>{colors.map((color) => <button key={color.id} draggable onDragStart={(event) => event.dataTransfer.setData("colorId", String(color.id))} onClick={() => setPackDraft({ ...packDraft, items: [...packDraft.items, color.id] })}><i style={{ background: color.hex }} /><span>{color.name}</span><b>+</b></button>)}</div>
@@ -356,7 +358,7 @@ export default function LevelConstructor() {
             {packDraft.items.map((colorId, index) => { const color = colors.find((item) => item.id === colorId); return <div className="draft-piece" key={`${colorId}-${index}`} draggable onDragStart={(event) => event.dataTransfer.setData("stackIndex", String(index))} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const from = Number(event.dataTransfer.getData("stackIndex")); if (Number.isInteger(from)) moveDraftItem(from, index); }}><span>{index === 0 ? "НИЗ" : index === packDraft.items.length - 1 ? "ВЕРХ" : index + 1}</span><i style={{ background: color?.hex }} /><b>{color?.name}</b><div><button disabled={index === 0} onClick={() => moveDraftItem(index, index - 1)}>↓</button><button disabled={index === packDraft.items.length - 1} onClick={() => moveDraftItem(index, index + 1)}>↑</button><button className="remove" onClick={() => setPackDraft({ ...packDraft, items: packDraft.items.filter((_, itemIndex) => itemIndex !== index) })}>×</button></div></div>; })}
           </div></div>
         </div>
-        <footer><span>{packDraft.items.length} элементов</span><div><button className="modal-cancel" onClick={() => setPackDraft(null)}>Отмена</button><button className="primary" disabled={packDraft.items.length === 0} onClick={savePack}>Создать пачку</button></div></footer>
+        <footer><span>{packDraft.items.length} элементов</span><div><button className="modal-cancel" onClick={() => setPackDraft(null)}>Отмена</button><button className="primary" disabled={packDraft.items.length === 0} onClick={savePack}>{packDraft.id ? "Сохранить" : "Создать пачку"}</button></div></footer>
       </section></div>}
       {contextMenu && placements[contextMenu.cellId] && <div className="context-backdrop" onPointerDown={() => setContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setContextMenu(null); }}><div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()}><small>Действия с пачкой</small><button onClick={() => toggleLock(contextMenu.cellId)}><span>{placements[contextMenu.cellId].locked ? "🔓" : "🔒"}</span>{placements[contextMenu.cellId].locked ? "Снять замок" : "Установить замок"}</button>{placements[contextMenu.cellId].locked && <label className="lock-count-field"><span>Гексов для снятия</span><input key={`${contextMenu.cellId}-${placements[contextMenu.cellId].unlockHexCount ?? 10}`} type="number" min="1" defaultValue={placements[contextMenu.cellId].unlockHexCount ?? 10} onBlur={(event) => updateUnlockHexCount(contextMenu.cellId, Number(event.target.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>}<button className="danger" onClick={() => { setPlacements((value) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== contextMenu.cellId))); setContextMenu(null); }}><span>×</span>Убрать пачку</button></div></div>}
       {notice && <div className="toast">{notice}</div>}
