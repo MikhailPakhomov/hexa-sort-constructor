@@ -99,6 +99,8 @@ export default function LevelConstructor() {
   const [notice, setNotice] = useState("");
   const [contextMenu, setContextMenu] = useState<{ cellId: string; x: number; y: number } | null>(null);
   const [packDraft, setPackDraft] = useState<{ name: string; items: number[] } | null>(null);
+  const [draggingPackId, setDraggingPackId] = useState<string | null>(null);
+  const [dragTargetCell, setDragTargetCell] = useState<string | null>(null);
 
   const rows = useMemo(() => makeRows(active, rowCount, columnCount), [active, columnCount, rowCount]);
   const randomWeightTotal = useMemo(() => randomPacks.reduce((sum, entry) => sum + Math.max(0, entry.weight), 0), [randomPacks]);
@@ -188,6 +190,13 @@ export default function LevelConstructor() {
     setPackDraft(null);
   }
 
+  function dropPack(id: string, packId: string) {
+    if (!active.has(id) || !packs.some((pack) => pack.id === packId)) return;
+    setPlacements((current) => ({ ...current, [id]: { packId, locked: false } }));
+    setSelectedPack(packId);
+    setDragTargetCell(null);
+  }
+
   function addRandomPack() {
     setRandomPacks((current) => {
       const packId = current.some((entry) => entry.packId === selectedPack)
@@ -253,7 +262,7 @@ export default function LevelConstructor() {
           </div>
           <p className="hint board-size-hint">Диапазон: {MIN_BOARD_SIZE}–{MAX_COLUMN_COUNT} столбцов и {MIN_BOARD_SIZE}–{MAX_ROW_COUNT} строк.</p>
           <div className="segmented tool-switch"><button className={boardTool === "cells" ? "active" : ""} onClick={() => setBoardTool("cells")}>Ячейки</button><button className={boardTool === "packs" ? "active" : ""} onClick={() => setBoardTool("packs")}>Пачки</button></div>
-          <p className="hint">{boardTool === "cells" ? "Клик включает пустую ячейку или удаляет активную вместе с установленной пачкой." : "Клик по активной ячейке ставит выбранную пачку или убирает установленную."}</p>
+          <p className="hint">{boardTool === "cells" ? "Клик включает пустую ячейку или удаляет активную вместе с установленной пачкой. Пачку также можно перетащить из библиотеки на активную ячейку." : "Клик по активной ячейке ставит выбранную пачку или убирает установленную. Пачки можно перетаскивать из библиотеки."}</p>
           {boardTool === "packs" && <label>Выбранная пачка<select value={selectedPack} onChange={(event) => setSelectedPack(event.target.value)}>{packs.map((pack) => <option key={pack.id} value={pack.id}>{pack.name}</option>)}</select></label>}
           <div className="legend"><span><i className="empty" /> Неактивный</span><span><i className="active-cell" /> Активный</span></div>
         </aside>
@@ -265,7 +274,7 @@ export default function LevelConstructor() {
               {Array.from({ length: rowCount }, (_, row) => Array.from({ length: columnCount }, (_, slot) => {
                 const id = cellId(row, slot); const isActive = active.has(id); const placement = placements[id]; const pack = placement && packs.find((item) => item.id === placement.packId);
                 const column = cellColumn(row, slot, columnCount);
-                return <button key={id} style={{ position: "absolute", left: `calc(50% + ${column * 54}px)`, top: row * 30, width: 70, height: 60, transform: "translateX(-50%)" }} className={`hex-cell ${isActive ? "is-active" : ""} ${placement ? "has-pack" : ""} tool-${boardTool}`} onClick={() => handleBoardClick(id)} onContextMenu={(event) => { event.preventDefault(); if (placement) setContextMenu({ cellId: id, x: event.clientX, y: event.clientY }); }} title={`${id} · column ${column}${pack ? ` — ${pack.name}. Правый клик — действия` : ""}`}>
+                return <button key={id} style={{ position: "absolute", left: `calc(50% + ${column * 54}px)`, top: row * 30, width: 70, height: 60, transform: "translateX(-50%)" }} className={`hex-cell ${isActive ? "is-active" : ""} ${placement ? "has-pack" : ""} ${draggingPackId && isActive ? "can-drop" : ""} ${dragTargetCell === id ? "is-drop-target" : ""} tool-${boardTool}`} onClick={() => handleBoardClick(id)} onDragEnter={(event) => { if (!isActive || !draggingPackId) return; event.preventDefault(); setDragTargetCell(id); }} onDragOver={(event) => { if (!isActive || !draggingPackId) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragTargetCell((current) => current === id ? null : current); }} onDrop={(event) => { event.preventDefault(); const packId = event.dataTransfer.getData("application/x-hexa-pack") || draggingPackId; if (packId) dropPack(id, packId); }} onContextMenu={(event) => { event.preventDefault(); if (placement) setContextMenu({ cellId: id, x: event.clientX, y: event.clientY }); }} title={`${id} · column ${column}${pack ? ` — ${pack.name}. Правый клик — действия` : ""}`}>
                   {pack && <PieceStack items={pack.items} colors={colors} />}{placement && <span className={`lock ${placement.locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); toggleLock(id); }} title={placement.locked ? "Снять замок" : "Установить замок"}>🔒</span>}
                   {!isActive && <span className="plus">+</span>}
                 </button>;
@@ -279,7 +288,7 @@ export default function LevelConstructor() {
           <div className="tabs"><span className="active">Пачки</span><span>Очередь</span></div>
           <div className="scroll-content">
             <div className="section-title"><div><h2>Библиотека пачек</h2><p>Общие стопки уровня</p></div><button className="icon-button" onClick={() => setPackDraft({ name: `Новая пачка ${packs.length + 1}`, items: [] })} title="Создать пачку">+</button></div>
-            <div className="pack-list">{packs.map((pack) => <article className={`pack-card ${selectedPack === pack.id ? "selected" : ""}`} key={pack.id} onClick={() => setSelectedPack(pack.id)}>
+            <div className="pack-list">{packs.map((pack) => <article className={`pack-card ${selectedPack === pack.id ? "selected" : ""} ${draggingPackId === pack.id ? "is-dragging" : ""}`} key={pack.id} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-hexa-pack", pack.id); setDraggingPackId(pack.id); setSelectedPack(pack.id); }} onDragEnd={() => { setDraggingPackId(null); setDragTargetCell(null); }} onClick={() => setSelectedPack(pack.id)} title="Перетащите пачку на активную ячейку поля">
               <PieceStack items={pack.items} colors={colors} small />
               <div><input value={pack.name} onClick={(e) => e.stopPropagation()} onChange={(event) => updatePack(pack.id, { name: event.target.value })} /><small>{pack.id} · {pack.items.length} шт.</small></div>
               <button onClick={(event) => { event.stopPropagation(); updatePack(pack.id, { items: [...pack.items, colors[pack.items.length % colors.length].id] }); }}>+</button>
