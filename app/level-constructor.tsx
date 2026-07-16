@@ -57,9 +57,13 @@ function cellColumn(row: number, slot: number, columnCount: number) {
   return slot * 2 - (columnCount - 1) + (row % 2);
 }
 
+function slotsInRow(row: number, columnCount: number) {
+  return columnCount - (row % 2);
+}
+
 function makeRows(active: Set<string>, rowCount: number, columnCount: number) {
   return Array.from({ length: rowCount }, (_, row) => ({
-    columns: Array.from({ length: columnCount }, (_, slot) => cellId(row, slot))
+    columns: Array.from({ length: slotsInRow(row, columnCount) }, (_, slot) => cellId(row, slot))
       .filter((id) => active.has(id))
       .map((id) => cellColumn(row, Number(id.split(":")[1]), columnCount)),
   }));
@@ -108,7 +112,7 @@ export default function LevelConstructor() {
     const boardCells = rows.flatMap(({ columns }, row) => columns.map((column, slot) => ({ id: `${row}:${slot}`, row, slot, column })));
     const exportedCellIds = new Map<string, string>();
     Array.from({ length: rowCount }, (_, row) => {
-      const activeSlots = Array.from({ length: columnCount }, (_, slot) => slot).filter((slot) => active.has(cellId(row, slot)));
+      const activeSlots = Array.from({ length: slotsInRow(row, columnCount) }, (_, slot) => slot).filter((slot) => active.has(cellId(row, slot)));
       activeSlots.forEach((gridSlot, exportSlot) => exportedCellIds.set(cellId(row, gridSlot), `${row}:${exportSlot}`));
     });
     const hardPacks = queue.map((item, index) => item.kind === "random"
@@ -141,7 +145,7 @@ export default function LevelConstructor() {
     const rows = Math.min(MAX_ROW_COUNT, Math.max(MIN_BOARD_SIZE, nextRowCount));
     const isInside = (id: string) => {
       const [row, slot] = id.split(":").map(Number);
-      return row < rows && slot < columns;
+      return row < rows && slot < slotsInRow(row, columns);
     };
 
     setColumnCount(columns);
@@ -271,7 +275,7 @@ export default function LevelConstructor() {
           <div className="canvas-head"><div><p className="eyebrow">Игровое поле</p><h1>Сетка {columnCount} × {rowCount}</h1></div><div className="stats"><span><b>{active.size}</b> слотов</span><span><b>{Object.keys(placements).length}</b> пачек</span></div></div>
           <div className="board-wrap">
             <div className="hex-board coordinate-grid" style={{ position: "relative", display: "block", width: columnCount * 108 + 60, height: rowCount * 30 + 30, padding: 0 }}>
-              {Array.from({ length: rowCount }, (_, row) => Array.from({ length: columnCount }, (_, slot) => {
+              {Array.from({ length: rowCount }, (_, row) => Array.from({ length: slotsInRow(row, columnCount) }, (_, slot) => {
                 const id = cellId(row, slot); const isActive = active.has(id); const placement = placements[id]; const pack = placement && packs.find((item) => item.id === placement.packId);
                 const column = cellColumn(row, slot, columnCount);
                 return <button key={id} style={{ position: "absolute", left: `calc(50% + ${column * 54}px)`, top: row * 30, width: 70, height: 60, transform: "translateX(-50%)" }} className={`hex-cell ${isActive ? "is-active" : ""} ${placement ? "has-pack" : ""} ${draggingPackId && isActive ? "can-drop" : ""} ${dragTargetCell === id ? "is-drop-target" : ""} tool-${boardTool}`} onClick={() => handleBoardClick(id)} onDragEnter={(event) => { if (!isActive || !draggingPackId) return; event.preventDefault(); setDragTargetCell(id); }} onDragOver={(event) => { if (!isActive || !draggingPackId) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragTargetCell((current) => current === id ? null : current); }} onDrop={(event) => { event.preventDefault(); const packId = event.dataTransfer.getData("application/x-hexa-pack") || draggingPackId; if (packId) dropPack(id, packId); }} onContextMenu={(event) => { event.preventDefault(); if (placement) setContextMenu({ cellId: id, x: event.clientX, y: event.clientY }); }} title={`${id} · column ${column}${pack ? ` — ${pack.name}. Правый клик — действия` : ""}`}>
