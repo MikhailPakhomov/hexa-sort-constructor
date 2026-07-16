@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 
 type Color = { id: number; name: string; hex: string; sprite: string };
 type Pack = { id: string; name: string; items: number[] };
-type Placement = { packId: string; locked: boolean };
+type Placement = { packId: string; locked: boolean; unlockHexCount?: number };
 type QueueItem = { kind: "pack"; packId: string } | { kind: "random" };
 type RandomPack = { packId: string; weight: number };
 
@@ -86,7 +86,6 @@ export default function LevelConstructor() {
   const [active, setActive] = useState(new Set(DEFAULT_CELLS));
   const [placements, setPlacements] = useState<Record<string, Placement>>({});
   const [selectedPack, setSelectedPack] = useState(INITIAL_PACKS[0].id);
-  const [boardTool, setBoardTool] = useState<"cells" | "packs">("cells");
   const [columnCount, setColumnCount] = useState(DEFAULT_COLUMN_COUNT);
   const [rowCount, setRowCount] = useState(DEFAULT_ROW_COUNT);
   const [levelId, setLevelId] = useState("level-8");
@@ -107,6 +106,7 @@ export default function LevelConstructor() {
   const [dragTargetCell, setDragTargetCell] = useState<string | null>(null);
 
   const rows = useMemo(() => makeRows(active, rowCount, columnCount), [active, columnCount, rowCount]);
+  const initialHand = useMemo(() => Array.from({ length: 3 }, (_, index) => queue[index] ?? null), [queue]);
   const randomWeightTotal = useMemo(() => randomPacks.reduce((sum, entry) => sum + Math.max(0, entry.weight), 0), [randomPacks]);
   const config = useMemo(() => {
     const boardCells = rows.flatMap(({ columns }, row) => columns.map((column, slot) => ({ id: `${row}:${slot}`, row, slot, column })));
@@ -132,7 +132,7 @@ export default function LevelConstructor() {
       },
       initialStacks: Object.entries(placements)
         .filter(([id]) => active.has(id))
-        .map(([id, placement], index) => ({ id: `board-stack-${index + 1}`, cellId: exportedCellIds.get(id) ?? id, packId: placement.packId, items: packs.find((pack) => pack.id === placement.packId)?.items ?? [], ...(placement.locked ? { blocker: "lock" } : {}) })),
+        .map(([id, placement], index) => ({ id: `board-stack-${index + 1}`, cellId: exportedCellIds.get(id) ?? id, packId: placement.packId, items: packs.find((pack) => pack.id === placement.packId)?.items ?? [], ...(placement.locked ? { blocker: "lock", unlockHexCount: placement.unlockHexCount ?? 10 } : {}) })),
       handStacks: firstThree,
       stackQueue: hardPacks.slice(3),
       randomQueue: { packs: randomPacks.filter((entry) => entry.weight > 0 && packs.some((pack) => pack.id === entry.packId)).map((entry) => ({ packId: entry.packId, weight: entry.weight })) },
@@ -166,22 +166,22 @@ export default function LevelConstructor() {
     });
   }
 
-  function placePack(id: string) {
-    if (!active.has(id)) return;
-    setPlacements((current) => current[id] ? Object.fromEntries(Object.entries(current).filter(([key]) => key !== id)) : { ...current, [id]: { packId: selectedPack, locked: false } });
-  }
-
   function handleBoardClick(id: string) {
     setContextMenu(null);
-    if (boardTool === "cells") toggleCell(id);
-    else placePack(id);
+    toggleCell(id);
   }
 
   function toggleLock(id: string) {
     const placement = placements[id];
     if (!placement) return;
-    setPlacements((value) => ({ ...value, [id]: { ...placement, locked: !placement.locked } }));
+    setPlacements((value) => ({ ...value, [id]: { ...placement, locked: !placement.locked, unlockHexCount: placement.unlockHexCount ?? 10 } }));
     setContextMenu(null);
+  }
+
+  function updateUnlockHexCount(id: string, count: number) {
+    setPlacements((current) => current[id]
+      ? { ...current, [id]: { ...current[id], unlockHexCount: Math.max(1, Math.round(count) || 1) } }
+      : current);
   }
 
   function savePack() {
@@ -196,7 +196,7 @@ export default function LevelConstructor() {
 
   function dropPack(id: string, packId: string) {
     if (!active.has(id) || !packs.some((pack) => pack.id === packId)) return;
-    setPlacements((current) => ({ ...current, [id]: { packId, locked: false } }));
+    setPlacements((current) => ({ ...current, [id]: { packId, locked: false, unlockHexCount: 10 } }));
     setSelectedPack(packId);
     setDragTargetCell(null);
   }
@@ -265,24 +265,34 @@ export default function LevelConstructor() {
             <label>Строки<input type="number" min={MIN_BOARD_SIZE} max={MAX_ROW_COUNT} value={rowCount} onChange={(event) => resizeBoard(columnCount, Number(event.target.value))} /></label>
           </div>
           <p className="hint board-size-hint">Диапазон: {MIN_BOARD_SIZE}–{MAX_COLUMN_COUNT} столбцов и {MIN_BOARD_SIZE}–{MAX_ROW_COUNT} строк.</p>
-          <div className="segmented tool-switch"><button className={boardTool === "cells" ? "active" : ""} onClick={() => setBoardTool("cells")}>Ячейки</button><button className={boardTool === "packs" ? "active" : ""} onClick={() => setBoardTool("packs")}>Пачки</button></div>
-          <p className="hint">{boardTool === "cells" ? "Клик включает пустую ячейку или удаляет активную вместе с установленной пачкой. Пачку также можно перетащить из библиотеки на активную ячейку." : "Клик по активной ячейке ставит выбранную пачку или убирает установленную. Пачки можно перетаскивать из библиотеки."}</p>
-          {boardTool === "packs" && <label>Выбранная пачка<select value={selectedPack} onChange={(event) => setSelectedPack(event.target.value)}>{packs.map((pack) => <option key={pack.id} value={pack.id}>{pack.name}</option>)}</select></label>}
+          <p className="hint">Клик включает пустую ячейку или удаляет активную вместе с установленной пачкой. Чтобы установить пачку, перетащите её из библиотеки на активную ячейку.</p>
           <div className="legend"><span><i className="empty" /> Неактивный</span><span><i className="active-cell" /> Активный</span></div>
         </aside>
 
         <section className="canvas-panel">
           <div className="canvas-head"><div><p className="eyebrow">Игровое поле</p><h1>Сетка {columnCount} × {rowCount}</h1></div><div className="stats"><span><b>{active.size}</b> слотов</span><span><b>{Object.keys(placements).length}</b> пачек</span></div></div>
           <div className="board-wrap">
-            <div className="hex-board coordinate-grid" style={{ position: "relative", display: "block", width: columnCount * 108 + 60, height: rowCount * 30 + 30, padding: 0 }}>
-              {Array.from({ length: rowCount }, (_, row) => Array.from({ length: slotsInRow(row, columnCount) }, (_, slot) => {
-                const id = cellId(row, slot); const isActive = active.has(id); const placement = placements[id]; const pack = placement && packs.find((item) => item.id === placement.packId);
-                const column = cellColumn(row, slot, columnCount);
-                return <button key={id} style={{ position: "absolute", left: `calc(50% + ${column * 54}px)`, top: row * 30, width: 70, height: 60, transform: "translateX(-50%)" }} className={`hex-cell ${isActive ? "is-active" : ""} ${placement ? "has-pack" : ""} ${draggingPackId && isActive ? "can-drop" : ""} ${dragTargetCell === id ? "is-drop-target" : ""} tool-${boardTool}`} onClick={() => handleBoardClick(id)} onDragEnter={(event) => { if (!isActive || !draggingPackId) return; event.preventDefault(); setDragTargetCell(id); }} onDragOver={(event) => { if (!isActive || !draggingPackId) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragTargetCell((current) => current === id ? null : current); }} onDrop={(event) => { event.preventDefault(); const packId = event.dataTransfer.getData("application/x-hexa-pack") || draggingPackId; if (packId) dropPack(id, packId); }} onContextMenu={(event) => { event.preventDefault(); if (placement) setContextMenu({ cellId: id, x: event.clientX, y: event.clientY }); }} title={`${id} · column ${column}${pack ? ` — ${pack.name}. Правый клик — действия` : ""}`}>
-                  {pack && <PieceStack items={pack.items} colors={colors} />}{placement && <span className={`lock ${placement.locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); toggleLock(id); }} title={placement.locked ? "Снять замок" : "Установить замок"}>🔒</span>}
-                  {!isActive && <span className="plus">+</span>}
-                </button>;
-              }))}
+            <div className="board-stage">
+              <div className="hex-board coordinate-grid" style={{ position: "relative", display: "block", width: columnCount * 130 + 72, height: rowCount * 36 + 48, padding: 0 }}>
+                {Array.from({ length: rowCount }, (_, row) => Array.from({ length: slotsInRow(row, columnCount) }, (_, slot) => {
+                  const id = cellId(row, slot); const isActive = active.has(id); const placement = placements[id]; const pack = placement && packs.find((item) => item.id === placement.packId);
+                  const column = cellColumn(row, slot, columnCount);
+                  return <div className={`hex-cell-position ${placement ? "has-placement" : ""}`} key={id} style={{ position: "absolute", left: `calc(50% + ${column * 65}px)`, top: row * 36, width: 84, height: 72, transform: "translateX(-50%)" }}>
+                    <button style={{ width: 84, height: 72 }} className={`hex-cell ${isActive ? "is-active" : ""} ${placement ? "has-pack" : ""} ${draggingPackId && isActive ? "can-drop" : ""} ${dragTargetCell === id ? "is-drop-target" : ""}`} onClick={() => handleBoardClick(id)} onDragEnter={(event) => { if (!isActive || !draggingPackId) return; event.preventDefault(); setDragTargetCell(id); }} onDragOver={(event) => { if (!isActive || !draggingPackId) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragTargetCell((current) => current === id ? null : current); }} onDrop={(event) => { event.preventDefault(); const packId = event.dataTransfer.getData("application/x-hexa-pack") || draggingPackId; if (packId) dropPack(id, packId); }} onContextMenu={(event) => { event.preventDefault(); if (placement) setContextMenu({ cellId: id, x: event.clientX, y: event.clientY }); }} title={`${id} · column ${column}${pack ? ` — ${pack.name}. Правый клик — действия` : ""}`}>
+                      {pack && <PieceStack items={pack.items} colors={colors} />}
+                      {!isActive && <span className="plus">+</span>}
+                    </button>
+                    {placement && <div className="cell-lock-control" onContextMenu={(event) => { event.preventDefault(); setContextMenu({ cellId: id, x: event.clientX, y: event.clientY }); }}><span className={`lock ${placement.locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); toggleLock(id); }} title={placement.locked ? `Замок включён. Нужно собрать ${placement.unlockHexCount ?? 10} гексов. Правый клик — изменить количество.` : "Замок выключен. Нажмите, чтобы включить. Правый клик — дополнительные настройки."}>🔒</span>{placement.locked && <span className="lock-count" title={`Для снятия замка нужно собрать ${placement.unlockHexCount ?? 10} гексов. Правый клик — изменить количество.`}>{placement.unlockHexCount ?? 10}</span>}</div>}
+                  </div>;
+                }))}
+              </div>
+              <section className="hand-preview" aria-label="Начальная очередь">
+                <p>Начальная очередь</p>
+                <div>{initialHand.map((item, index) => {
+                  const pack = item?.kind === "pack" ? packs.find((entry) => entry.id === item.packId) : null;
+                  return <article className={`hand-slot ${item ? "is-filled" : ""}`} key={index} title={pack?.name ?? (item?.kind === "random" ? "Случайная пачка" : "Пустой слот")}><span>{index + 1}</span>{pack ? <PieceStack items={pack.items} colors={colors} /> : item?.kind === "random" ? <b className="random-stack">?</b> : <i>+</i>}</article>;
+                })}</div>
+              </section>
             </div>
           </div>
           <div className="canvas-tip">Нажмите кнопку 🔒 на пачке или используйте правый клик</div>
@@ -348,7 +358,7 @@ export default function LevelConstructor() {
         </div>
         <footer><span>{packDraft.items.length} элементов</span><div><button className="modal-cancel" onClick={() => setPackDraft(null)}>Отмена</button><button className="primary" disabled={packDraft.items.length === 0} onClick={savePack}>Создать пачку</button></div></footer>
       </section></div>}
-      {contextMenu && placements[contextMenu.cellId] && <div className="context-backdrop" onPointerDown={() => setContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setContextMenu(null); }}><div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()}><small>Действия с пачкой</small><button onClick={() => toggleLock(contextMenu.cellId)}><span>{placements[contextMenu.cellId].locked ? "🔓" : "🔒"}</span>{placements[contextMenu.cellId].locked ? "Снять замок" : "Установить замок"}</button><button className="danger" onClick={() => { setPlacements((value) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== contextMenu.cellId))); setContextMenu(null); }}><span>×</span>Убрать пачку</button></div></div>}
+      {contextMenu && placements[contextMenu.cellId] && <div className="context-backdrop" onPointerDown={() => setContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setContextMenu(null); }}><div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()}><small>Действия с пачкой</small><button onClick={() => toggleLock(contextMenu.cellId)}><span>{placements[contextMenu.cellId].locked ? "🔓" : "🔒"}</span>{placements[contextMenu.cellId].locked ? "Снять замок" : "Установить замок"}</button>{placements[contextMenu.cellId].locked && <label className="lock-count-field"><span>Гексов для снятия</span><input key={`${contextMenu.cellId}-${placements[contextMenu.cellId].unlockHexCount ?? 10}`} type="number" min="1" defaultValue={placements[contextMenu.cellId].unlockHexCount ?? 10} onBlur={(event) => updateUnlockHexCount(contextMenu.cellId, Number(event.target.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>}<button className="danger" onClick={() => { setPlacements((value) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== contextMenu.cellId))); setContextMenu(null); }}><span>×</span>Убрать пачку</button></div></div>}
       {notice && <div className="toast">{notice}</div>}
     </main>
   );
