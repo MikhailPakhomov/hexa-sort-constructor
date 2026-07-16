@@ -1,12 +1,31 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type Color = { id: string; name: string; hex: string; sprite: string };
 type Pack = { id: string; name: string; items: string[] };
 type Placement = { packId: string; locked: boolean; unlockHexCount?: number };
 type QueueItem = { kind: "pack"; packId: string } | { kind: "random" };
 type RandomPack = { packId: string; weight: number };
+type LevelSnapshot = {
+  levelId: string;
+  title: string;
+  targetScore: number;
+  targetType: "any" | "color";
+  targetColor: string;
+  columnCount: number;
+  rowCount: number;
+  active: string[];
+  placements: Record<string, Placement>;
+  colors: Color[];
+  packs: Pack[];
+  selectedPack: string;
+  queue: QueueItem[];
+  randomPacks: RandomPack[];
+};
+type SavedLevel = { id: string; title: string; updatedAt: string; snapshot: LevelSnapshot };
+
+const SAVED_LEVELS_KEY = "hexa-sort-constructor:saved-levels";
 
 const INITIAL_COLORS: Color[] = [
   { id: "1", name: "Розовый", hex: "#ff3fa3", sprite: "hex-pink" },
@@ -105,6 +124,20 @@ export default function LevelConstructor() {
   const [colorDraft, setColorDraft] = useState<{ id: string; name: string; hex: string } | null>(null);
   const [draggingPackId, setDraggingPackId] = useState<string | null>(null);
   const [dragTargetCell, setDragTargetCell] = useState<string | null>(null);
+  const [savedLevels, setSavedLevels] = useState<SavedLevel[]>([]);
+  const [selectedSavedLevel, setSelectedSavedLevel] = useState("");
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      try {
+        const stored = window.localStorage.getItem(SAVED_LEVELS_KEY);
+        if (stored) setSavedLevels(JSON.parse(stored) as SavedLevel[]);
+      } catch {
+        setNotice("Не удалось прочитать сохранённые уровни");
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const rows = useMemo(() => makeRows(active, rowCount, columnCount), [active, columnCount, rowCount]);
   const initialHand = useMemo(() => Array.from({ length: 3 }, (_, index) => queue[index] ?? null), [queue]);
@@ -257,11 +290,76 @@ export default function LevelConstructor() {
     window.setTimeout(() => setNotice(""), 2200);
   }
 
+  function saveLevel() {
+    const id = levelId.trim();
+    if (!id) {
+      setNotice("Укажите ID уровня");
+      return;
+    }
+    const savedTitle = title.trim() || id;
+    const levelWithSameTitle = savedLevels.find(
+      (level) => level.title.trim().toLocaleLowerCase() === savedTitle.toLocaleLowerCase(),
+    );
+    if (levelWithSameTitle && !window.confirm(`Уровень с названием «${savedTitle}» уже существует. Обновить его?`)) {
+      setNotice("Сохранение отменено");
+      window.setTimeout(() => setNotice(""), 2200);
+      return;
+    }
+    const snapshot: LevelSnapshot = {
+      levelId: id, title, targetScore, targetType, targetColor, columnCount, rowCount,
+      active: [...active], placements, colors, packs, selectedPack, queue, randomPacks,
+    };
+    const saved: SavedLevel = { id, title: savedTitle, updatedAt: new Date().toISOString(), snapshot };
+    const next = [...savedLevels.filter((level) => level.id !== id && level.id !== levelWithSameTitle?.id), saved]
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    try {
+      window.localStorage.setItem(SAVED_LEVELS_KEY, JSON.stringify(next));
+      setSavedLevels(next);
+      setSelectedSavedLevel(id);
+      setNotice(savedLevels.some((level) => level.id === id) || levelWithSameTitle ? "Уровень обновлён" : "Уровень сохранён");
+      window.setTimeout(() => setNotice(""), 2200);
+    } catch {
+      setNotice("Не удалось сохранить уровень");
+    }
+  }
+
+  function loadLevel(id: string) {
+    setSelectedSavedLevel(id);
+    const saved = savedLevels.find((level) => level.id === id);
+    if (!saved) return;
+    const value = saved.snapshot;
+    setLevelId(value.levelId);
+    setTitle(value.title);
+    setTargetScore(value.targetScore);
+    setTargetType(value.targetType);
+    setTargetColor(value.targetColor);
+    setColumnCount(value.columnCount);
+    setRowCount(value.rowCount);
+    setActive(new Set(value.active));
+    setPlacements(value.placements);
+    setColors(value.colors);
+    setPacks(value.packs);
+    setSelectedPack(value.selectedPack);
+    setQueue(value.queue);
+    setRandomPacks(value.randomPacks);
+    setContextMenu(null);
+    setNotice(`Загружен уровень «${saved.title}»`);
+    window.setTimeout(() => setNotice(""), 2200);
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
         <div className="brand"><span className="brand-mark">H</span><div><strong>Hexa Sort</strong><small>Конструктор уровней</small></div></div>
-        <div className="top-actions"><span className="saved-dot">Все изменения сохранены</span><button className="secondary" onClick={() => navigator.clipboard.writeText(JSON.stringify(config, null, 2)).then(() => setNotice("JSON скопирован"))}>Копировать JSON</button><button className="primary" onClick={download}>Скачать JSON</button></div>
+        <div className="top-actions">
+          <select className="saved-level-select" aria-label="Сохранённые уровни" value={selectedSavedLevel} onChange={(event) => loadLevel(event.target.value)}>
+            <option value="">Сохранённые уровни ({savedLevels.length})</option>
+            {savedLevels.map((level) => <option key={level.id} value={level.id}>{level.title} · {level.id}</option>)}
+          </select>
+          <button className="save-level" onClick={saveLevel}>Сохранить уровень</button>
+          <button className="secondary" onClick={() => navigator.clipboard.writeText(JSON.stringify(config, null, 2)).then(() => setNotice("JSON скопирован"))}>Копировать JSON</button>
+          <button className="primary" onClick={download}>Скачать JSON</button>
+        </div>
       </header>
 
       <section className="workspace">
@@ -278,8 +376,8 @@ export default function LevelConstructor() {
           <div className="section-rule" />
           <h2>Настройки поля</h2>
           <div className="board-size-fields">
-            <label>Столбцы<input type="number" min={MIN_BOARD_SIZE} max={MAX_COLUMN_COUNT} value={columnCount} onChange={(event) => resizeBoard(Number(event.target.value), rowCount)} /></label>
-            <label>Строки<input type="number" min={MIN_BOARD_SIZE} max={MAX_ROW_COUNT} value={rowCount} onChange={(event) => resizeBoard(columnCount, Number(event.target.value))} /></label>
+            <label>Столбцы<div className="number-stepper"><input type="number" min={MIN_BOARD_SIZE} max={MAX_COLUMN_COUNT} value={columnCount} onChange={(event) => resizeBoard(Number(event.target.value), rowCount)} /><span><button type="button" aria-label="Увеличить количество столбцов" disabled={columnCount >= MAX_COLUMN_COUNT} onClick={() => resizeBoard(columnCount + 1, rowCount)}>▲</button><button type="button" aria-label="Уменьшить количество столбцов" disabled={columnCount <= MIN_BOARD_SIZE} onClick={() => resizeBoard(columnCount - 1, rowCount)}>▼</button></span></div></label>
+            <label>Строки<div className="number-stepper"><input type="number" min={MIN_BOARD_SIZE} max={MAX_ROW_COUNT} value={rowCount} onChange={(event) => resizeBoard(columnCount, Number(event.target.value))} /><span><button type="button" aria-label="Увеличить количество строк" disabled={rowCount >= MAX_ROW_COUNT} onClick={() => resizeBoard(columnCount, rowCount + 1)}>▲</button><button type="button" aria-label="Уменьшить количество строк" disabled={rowCount <= MIN_BOARD_SIZE} onClick={() => resizeBoard(columnCount, rowCount - 1)}>▼</button></span></div></label>
           </div>
           <p className="hint board-size-hint">Диапазон: {MIN_BOARD_SIZE}–{MAX_COLUMN_COUNT} столбцов и {MIN_BOARD_SIZE}–{MAX_ROW_COUNT} строк.</p>
           <p className="hint">Клик включает пустую ячейку или удаляет активную вместе с установленной пачкой. Чтобы установить пачку, перетащите её из библиотеки на активную ячейку.</p>
