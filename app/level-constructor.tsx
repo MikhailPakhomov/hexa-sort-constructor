@@ -2,27 +2,27 @@
 
 import { useMemo, useState } from "react";
 
-type Color = { id: number; name: string; hex: string; sprite: string };
-type Pack = { id: string; name: string; items: number[] };
+type Color = { id: string; name: string; hex: string; sprite: string };
+type Pack = { id: string; name: string; items: string[] };
 type Placement = { packId: string; locked: boolean; unlockHexCount?: number };
 type QueueItem = { kind: "pack"; packId: string } | { kind: "random" };
 type RandomPack = { packId: string; weight: number };
 
 const INITIAL_COLORS: Color[] = [
-  { id: 1, name: "Розовый", hex: "#ff3fa3", sprite: "hex-pink" },
-  { id: 2, name: "Голубой", hex: "#08afe3", sprite: "hex-cyan" },
-  { id: 3, name: "Зелёный", hex: "#82ed00", sprite: "hex-green" },
-  { id: 4, name: "Жёлтый", hex: "#ffd400", sprite: "hex-yellow" },
-  { id: 5, name: "Синий", hex: "#1760f2", sprite: "hex-blue" },
-  { id: 6, name: "Красный", hex: "#f5143e", sprite: "hex-red" },
-  { id: 7, name: "Тёмно-синий", hex: "#172140", sprite: "hex-dark-blue" },
-  { id: 8, name: "Белый", hex: "#d9ebff", sprite: "hex-white" },
+  { id: "1", name: "Розовый", hex: "#ff3fa3", sprite: "hex-pink" },
+  { id: "2", name: "Голубой", hex: "#08afe3", sprite: "hex-cyan" },
+  { id: "3", name: "Зелёный", hex: "#82ed00", sprite: "hex-green" },
+  { id: "4", name: "Жёлтый", hex: "#ffd400", sprite: "hex-yellow" },
+  { id: "5", name: "Синий", hex: "#1760f2", sprite: "hex-blue" },
+  { id: "6", name: "Красный", hex: "#f5143e", sprite: "hex-red" },
+  { id: "7", name: "Тёмно-синий", hex: "#172140", sprite: "hex-dark-blue" },
+  { id: "8", name: "Белый", hex: "#d9ebff", sprite: "hex-white" },
 ];
 
 const INITIAL_PACKS: Pack[] = [
-  { id: "pack-yellow-3", name: "3 жёлтых", items: [4, 4, 4] },
-  { id: "pack-red-3", name: "3 красных", items: [6, 6, 6] },
-  { id: "pack-mix-3", name: "Микс", items: [1, 2, 3] },
+  { id: "pack-yellow-3", name: "3 жёлтых", items: ["4", "4", "4"] },
+  { id: "pack-red-3", name: "3 красных", items: ["6", "6", "6"] },
+  { id: "pack-mix-3", name: "Микс", items: ["1", "2", "3"] },
 ];
 
 const INITIAL_RANDOM_PACKS: RandomPack[] = [
@@ -69,7 +69,7 @@ function makeRows(active: Set<string>, rowCount: number, columnCount: number) {
   }));
 }
 
-function PieceStack({ items, colors, small = false }: { items: number[]; colors: Color[]; small?: boolean }) {
+function PieceStack({ items, colors, small = false }: { items: string[]; colors: Color[]; small?: boolean }) {
   return (
     <span className={`piece-stack ${small ? "small" : ""}`} aria-label={`${items.length} элементов`}>
       {items.slice(-5).map((colorId, index) => (
@@ -92,7 +92,7 @@ export default function LevelConstructor() {
   const [title, setTitle] = useState("Уровень 8");
   const [targetScore, setTargetScore] = useState(150);
   const [targetType, setTargetType] = useState<"any" | "color">("any");
-  const [targetColor, setTargetColor] = useState(1);
+  const [targetColor, setTargetColor] = useState("1");
   const [queue, setQueue] = useState<QueueItem[]>([
     { kind: "pack", packId: "pack-yellow-3" },
     { kind: "pack", packId: "pack-red-3" },
@@ -101,7 +101,8 @@ export default function LevelConstructor() {
   const [randomPacks, setRandomPacks] = useState<RandomPack[]>(INITIAL_RANDOM_PACKS);
   const [notice, setNotice] = useState("");
   const [contextMenu, setContextMenu] = useState<{ cellId: string; x: number; y: number } | null>(null);
-  const [packDraft, setPackDraft] = useState<{ id?: string; name: string; items: number[] } | null>(null);
+  const [packDraft, setPackDraft] = useState<{ id?: string; name: string; items: string[] } | null>(null);
+  const [colorDraft, setColorDraft] = useState<{ id: string; name: string; hex: string } | null>(null);
   const [draggingPackId, setDraggingPackId] = useState<string | null>(null);
   const [dragTargetCell, setDragTargetCell] = useState<string | null>(null);
 
@@ -201,6 +202,19 @@ export default function LevelConstructor() {
     setPackDraft(null);
   }
 
+  function openColorEditor() {
+    let sequence = colors.length + 1;
+    while (colors.some((color) => color.id === `color-${sequence}`)) sequence += 1;
+    setColorDraft({ id: `color-${sequence}`, name: "Новый цвет", hex: "#8b5cf6" });
+  }
+
+  function saveColor() {
+    const id = colorDraft?.id.trim() ?? "";
+    if (!colorDraft || !id || !colorDraft.name.trim() || colors.some((color) => color.id === id)) return;
+    setColors((value) => [...value, { ...colorDraft, id, name: colorDraft.name.trim(), sprite: `hex-custom-${id}` }]);
+    setColorDraft(null);
+  }
+
   function dropPack(id: string, packId: string) {
     if (!active.has(id) || !packs.some((pack) => pack.id === packId)) return;
     setPlacements((current) => ({ ...current, [id]: { packId, locked: false, unlockHexCount: 10 } }));
@@ -258,7 +272,7 @@ export default function LevelConstructor() {
           <div className="section-rule" />
           <h2>Цель</h2>
           <div className="segmented"><button className={targetType === "any" ? "active" : ""} onClick={() => setTargetType("any")}>Любой цвет</button><button className={targetType === "color" ? "active" : ""} onClick={() => setTargetType("color")}>Конкретный</button></div>
-          {targetType === "color" && <label>Цвет<select value={targetColor} onChange={(event) => setTargetColor(Number(event.target.value))}>{colors.map((color) => <option key={color.id} value={color.id}>{color.name}</option>)}</select></label>}
+          {targetType === "color" && <label>Цвет<select value={targetColor} onChange={(event) => setTargetColor(event.target.value)}>{colors.map((color) => <option key={color.id} value={color.id}>{color.name}</option>)}</select></label>}
           <label>Количество<input type="number" min="1" value={targetScore} onChange={(event) => setTargetScore(Math.max(1, Number(event.target.value)))} /></label>
           <div className="goal-preview"><span>Прогресс</span><strong>0 / {targetScore}</strong><i><b style={{ width: "12%" }} /></i></div>
           <div className="section-rule" />
@@ -343,8 +357,8 @@ export default function LevelConstructor() {
             <button className="wide-button" disabled={packs.every((pack) => randomPacks.some((entry) => entry.packId === pack.id))} onClick={addRandomPack}>+ Добавить пачку</button>
 
             <div className="section-rule" />
-            <div className="section-title"><div><h2>Палитра</h2><p>ID и визуал цветов</p></div></div>
-            <div className="color-list">{colors.map((color) => <label key={color.id}><input type="color" value={color.hex} onChange={(event) => setColors((value) => value.map((item) => item.id === color.id ? { ...item, hex: event.target.value } : item))} /><input value={color.name} onChange={(event) => setColors((value) => value.map((item) => item.id === color.id ? { ...item, name: event.target.value } : item))} /><span>ID {color.id}</span></label>)}</div>
+            <div className="section-title"><div><h2>Палитра</h2><p>ID и визуал цветов</p></div><button className="icon-button" onClick={openColorEditor} title="Добавить цвет" aria-label="Добавить цвет">+</button></div>
+            <div className="color-list">{colors.map((color) => <label key={color.id}><input type="color" value={color.hex} onChange={(event) => setColors((value) => value.map((item) => item.id === color.id ? { ...item, hex: event.target.value } : item))} /><input value={color.name} onChange={(event) => setColors((value) => value.map((item) => item.id === color.id ? { ...item, name: event.target.value } : item))} /><span title={`ID: ${color.id}`}>ID: {color.id}</span></label>)}</div>
           </div>
         </aside>
       </section>
@@ -353,7 +367,7 @@ export default function LevelConstructor() {
         <label className="draft-name">Название пачки<input autoFocus value={packDraft.name} onChange={(event) => setPackDraft({ ...packDraft, name: event.target.value })} /></label>
         <div className="pack-editor">
           <div className="draft-palette"><h3>Цвета</h3><p>Перетащите цвет в стопку или нажмите на него</p>{colors.map((color) => <button key={color.id} draggable onDragStart={(event) => event.dataTransfer.setData("colorId", String(color.id))} onClick={() => setPackDraft({ ...packDraft, items: [...packDraft.items, color.id] })}><i style={{ background: color.hex }} /><span>{color.name}</span><b>+</b></button>)}</div>
-          <div className="draft-stack-zone"><div><h3>Состав пачки</h3><p>Порядок: низ → верх</p></div><div className={`draft-stack ${packDraft.items.length === 0 ? "empty" : ""}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const colorId = Number(event.dataTransfer.getData("colorId")); const from = Number(event.dataTransfer.getData("stackIndex")); if (colorId) setPackDraft({ ...packDraft, items: [...packDraft.items, colorId] }); else if (Number.isInteger(from)) moveDraftItem(from, packDraft.items.length - 1); }}>
+          <div className="draft-stack-zone"><div><h3>Состав пачки</h3><p>Порядок: низ → верх</p></div><div className={`draft-stack ${packDraft.items.length === 0 ? "empty" : ""}`} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const colorId = event.dataTransfer.getData("colorId"); const from = Number(event.dataTransfer.getData("stackIndex")); if (colorId) setPackDraft({ ...packDraft, items: [...packDraft.items, colorId] }); else if (Number.isInteger(from)) moveDraftItem(from, packDraft.items.length - 1); }}>
             {packDraft.items.length === 0 && <div className="drop-prompt"><span>＋</span><b>Перетащите цвет сюда</b><small>Первый цвет станет нижним</small></div>}
             {packDraft.items.map((colorId, index) => { const color = colors.find((item) => item.id === colorId); return <div className="draft-piece" key={`${colorId}-${index}`} draggable onDragStart={(event) => event.dataTransfer.setData("stackIndex", String(index))} onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); event.stopPropagation(); const from = Number(event.dataTransfer.getData("stackIndex")); if (Number.isInteger(from)) moveDraftItem(from, index); }}><span>{index === 0 ? "НИЗ" : index === packDraft.items.length - 1 ? "ВЕРХ" : index + 1}</span><i style={{ background: color?.hex }} /><b>{color?.name}</b><div><button disabled={index === 0} onClick={() => moveDraftItem(index, index - 1)}>↓</button><button disabled={index === packDraft.items.length - 1} onClick={() => moveDraftItem(index, index + 1)}>↑</button><button className="remove" onClick={() => setPackDraft({ ...packDraft, items: packDraft.items.filter((_, itemIndex) => itemIndex !== index) })}>×</button></div></div>; })}
           </div></div>
@@ -361,6 +375,16 @@ export default function LevelConstructor() {
         <footer><span>{packDraft.items.length} элементов</span><div><button className="modal-cancel" onClick={() => setPackDraft(null)}>Отмена</button><button className="primary" disabled={packDraft.items.length === 0} onClick={savePack}>{packDraft.id ? "Сохранить" : "Создать пачку"}</button></div></footer>
       </section></div>}
       {contextMenu && placements[contextMenu.cellId] && <div className="context-backdrop" onPointerDown={() => setContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setContextMenu(null); }}><div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()}><small>Действия с пачкой</small><button onClick={() => toggleLock(contextMenu.cellId)}><span>{placements[contextMenu.cellId].locked ? "🔓" : "🔒"}</span>{placements[contextMenu.cellId].locked ? "Снять замок" : "Установить замок"}</button>{placements[contextMenu.cellId].locked && <label className="lock-count-field"><span>Гексов для снятия</span><input key={`${contextMenu.cellId}-${placements[contextMenu.cellId].unlockHexCount ?? 10}`} type="number" min="1" defaultValue={placements[contextMenu.cellId].unlockHexCount ?? 10} onBlur={(event) => updateUnlockHexCount(contextMenu.cellId, Number(event.target.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>}<button className="danger" onClick={() => { setPlacements((value) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== contextMenu.cellId))); setContextMenu(null); }}><span>×</span>Убрать пачку</button></div></div>}
+      {colorDraft && <div className="modal-backdrop" onPointerDown={() => setColorDraft(null)}><section className="pack-modal color-modal" onPointerDown={(event) => event.stopPropagation()}>
+        <header><div><p className="eyebrow">Палитра</p><h2>Новый цвет</h2></div><button onClick={() => setColorDraft(null)} aria-label="Закрыть">×</button></header>
+        <div className="color-editor">
+          <label>ID<input autoFocus value={colorDraft.id} onChange={(event) => setColorDraft({ ...colorDraft, id: event.target.value })} placeholder="Например, purple или color_special" /></label>
+          {colors.some((color) => color.id === colorDraft.id.trim()) && <p className="form-error">Цвет с ID {colorDraft.id.trim()} уже существует.</p>}
+          <label>Название<input value={colorDraft.name} onChange={(event) => setColorDraft({ ...colorDraft, name: event.target.value })} placeholder="Например, Фиолетовый" /></label>
+          <label>Цвет<div className="color-picker-field"><input type="color" value={colorDraft.hex} onChange={(event) => setColorDraft({ ...colorDraft, hex: event.target.value })} /><code>{colorDraft.hex.toUpperCase()}</code></div></label>
+        </div>
+        <footer><span title={colorDraft.id.trim()}>ID: {colorDraft.id.trim() || "—"}</span><div><button className="modal-cancel" onClick={() => setColorDraft(null)}>Отмена</button><button className="primary" disabled={!colorDraft.id.trim() || !colorDraft.name.trim() || colors.some((color) => color.id === colorDraft.id.trim())} onClick={saveColor}>Добавить цвет</button></div></footer>
+      </section></div>}
       {notice && <div className="toast">{notice}</div>}
     </main>
   );
