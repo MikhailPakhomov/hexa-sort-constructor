@@ -43,21 +43,25 @@ const DEFAULT_CELLS = [
   "8:2",
 ];
 
-const BOARD_ROW_COUNT = 9;
+const DEFAULT_COLUMN_COUNT = 5;
+const DEFAULT_ROW_COUNT = 9;
+const MIN_BOARD_SIZE = 2;
+const MAX_COLUMN_COUNT = 12;
+const MAX_ROW_COUNT = 16;
 
 function cellId(row: number, slot: number) {
   return `${row}:${slot}`;
 }
 
-function cellColumn(row: number, slot: number) {
-  return slot * 2 + (row % 2 === 0 ? -4 : -3);
+function cellColumn(row: number, slot: number, columnCount: number) {
+  return slot * 2 - (columnCount - 1) + (row % 2);
 }
 
-function makeRows(active: Set<string>) {
-  return Array.from({ length: BOARD_ROW_COUNT }, (_, row) => ({
-    columns: Array.from({ length: 5 }, (_, slot) => cellId(row, slot))
+function makeRows(active: Set<string>, rowCount: number, columnCount: number) {
+  return Array.from({ length: rowCount }, (_, row) => ({
+    columns: Array.from({ length: columnCount }, (_, slot) => cellId(row, slot))
       .filter((id) => active.has(id))
-      .map((id) => cellColumn(row, Number(id.split(":")[1]))),
+      .map((id) => cellColumn(row, Number(id.split(":")[1]), columnCount)),
   }));
 }
 
@@ -79,6 +83,8 @@ export default function LevelConstructor() {
   const [placements, setPlacements] = useState<Record<string, Placement>>({});
   const [selectedPack, setSelectedPack] = useState(INITIAL_PACKS[0].id);
   const [boardTool, setBoardTool] = useState<"cells" | "packs">("cells");
+  const [columnCount, setColumnCount] = useState(DEFAULT_COLUMN_COUNT);
+  const [rowCount, setRowCount] = useState(DEFAULT_ROW_COUNT);
   const [levelId, setLevelId] = useState("level-8");
   const [title, setTitle] = useState("Уровень 8");
   const [targetScore, setTargetScore] = useState(150);
@@ -94,13 +100,13 @@ export default function LevelConstructor() {
   const [contextMenu, setContextMenu] = useState<{ cellId: string; x: number; y: number } | null>(null);
   const [packDraft, setPackDraft] = useState<{ name: string; items: number[] } | null>(null);
 
-  const rows = useMemo(() => makeRows(active), [active]);
+  const rows = useMemo(() => makeRows(active, rowCount, columnCount), [active, columnCount, rowCount]);
   const randomWeightTotal = useMemo(() => randomPacks.reduce((sum, entry) => sum + Math.max(0, entry.weight), 0), [randomPacks]);
   const config = useMemo(() => {
     const boardCells = rows.flatMap(({ columns }, row) => columns.map((column, slot) => ({ id: `${row}:${slot}`, row, slot, column })));
     const exportedCellIds = new Map<string, string>();
-    Array.from({ length: BOARD_ROW_COUNT }, (_, row) => {
-      const activeSlots = Array.from({ length: 5 }, (_, slot) => slot).filter((slot) => active.has(cellId(row, slot)));
+    Array.from({ length: rowCount }, (_, row) => {
+      const activeSlots = Array.from({ length: columnCount }, (_, slot) => slot).filter((slot) => active.has(cellId(row, slot)));
       activeSlots.forEach((gridSlot, exportSlot) => exportedCellIds.set(cellId(row, gridSlot), `${row}:${exportSlot}`));
     });
     const hardPacks = queue.map((item, index) => item.kind === "random"
@@ -113,6 +119,8 @@ export default function LevelConstructor() {
       targetScore,
       target: { type: targetType, ...(targetType === "color" ? { colorId: targetColor } : {}) },
       board: {
+        columnCount,
+        rowCount,
         rows,
         cells: boardCells,
       },
@@ -124,7 +132,22 @@ export default function LevelConstructor() {
       randomQueue: { packs: randomPacks.filter((entry) => entry.weight > 0 && packs.some((pack) => pack.id === entry.packId)).map((entry) => ({ packId: entry.packId, weight: entry.weight })) },
       library: { colors, packs },
     };
-  }, [active, colors, levelId, packs, placements, queue, randomPacks, rows, targetColor, targetScore, targetType, title]);
+  }, [active, colors, columnCount, levelId, packs, placements, queue, randomPacks, rowCount, rows, targetColor, targetScore, targetType, title]);
+
+  function resizeBoard(nextColumnCount: number, nextRowCount: number) {
+    const columns = Math.min(MAX_COLUMN_COUNT, Math.max(MIN_BOARD_SIZE, nextColumnCount));
+    const rows = Math.min(MAX_ROW_COUNT, Math.max(MIN_BOARD_SIZE, nextRowCount));
+    const isInside = (id: string) => {
+      const [row, slot] = id.split(":").map(Number);
+      return row < rows && slot < columns;
+    };
+
+    setColumnCount(columns);
+    setRowCount(rows);
+    setActive((current) => new Set([...current].filter(isInside)));
+    setPlacements((current) => Object.fromEntries(Object.entries(current).filter(([id]) => isInside(id))));
+    setContextMenu((current) => current && isInside(current.cellId) ? current : null);
+  }
 
   function toggleCell(id: string) {
     setActive((current) => {
@@ -224,6 +247,11 @@ export default function LevelConstructor() {
           <div className="goal-preview"><span>Прогресс</span><strong>0 / {targetScore}</strong><i><b style={{ width: "12%" }} /></i></div>
           <div className="section-rule" />
           <h2>Настройки поля</h2>
+          <div className="board-size-fields">
+            <label>Столбцы<input type="number" min={MIN_BOARD_SIZE} max={MAX_COLUMN_COUNT} value={columnCount} onChange={(event) => resizeBoard(Number(event.target.value), rowCount)} /></label>
+            <label>Строки<input type="number" min={MIN_BOARD_SIZE} max={MAX_ROW_COUNT} value={rowCount} onChange={(event) => resizeBoard(columnCount, Number(event.target.value))} /></label>
+          </div>
+          <p className="hint board-size-hint">Диапазон: {MIN_BOARD_SIZE}–{MAX_COLUMN_COUNT} столбцов и {MIN_BOARD_SIZE}–{MAX_ROW_COUNT} строк.</p>
           <div className="segmented tool-switch"><button className={boardTool === "cells" ? "active" : ""} onClick={() => setBoardTool("cells")}>Ячейки</button><button className={boardTool === "packs" ? "active" : ""} onClick={() => setBoardTool("packs")}>Пачки</button></div>
           <p className="hint">{boardTool === "cells" ? "Клик включает пустую ячейку или удаляет активную вместе с установленной пачкой." : "Клик по активной ячейке ставит выбранную пачку или убирает установленную."}</p>
           {boardTool === "packs" && <label>Выбранная пачка<select value={selectedPack} onChange={(event) => setSelectedPack(event.target.value)}>{packs.map((pack) => <option key={pack.id} value={pack.id}>{pack.name}</option>)}</select></label>}
@@ -231,12 +259,12 @@ export default function LevelConstructor() {
         </aside>
 
         <section className="canvas-panel">
-          <div className="canvas-head"><div><p className="eyebrow">Игровое поле</p><h1>Сетка 5 × 9</h1></div><div className="stats"><span><b>{active.size}</b> слотов</span><span><b>{Object.keys(placements).length}</b> пачек</span></div></div>
+          <div className="canvas-head"><div><p className="eyebrow">Игровое поле</p><h1>Сетка {columnCount} × {rowCount}</h1></div><div className="stats"><span><b>{active.size}</b> слотов</span><span><b>{Object.keys(placements).length}</b> пачек</span></div></div>
           <div className="board-wrap">
-            <div className="hex-board coordinate-grid" style={{ position: "relative", display: "block", width: 600, height: 300, padding: 0 }}>
-              {Array.from({ length: BOARD_ROW_COUNT }, (_, row) => Array.from({ length: 5 }, (_, slot) => {
+            <div className="hex-board coordinate-grid" style={{ position: "relative", display: "block", width: columnCount * 108 + 60, height: rowCount * 30 + 30, padding: 0 }}>
+              {Array.from({ length: rowCount }, (_, row) => Array.from({ length: columnCount }, (_, slot) => {
                 const id = cellId(row, slot); const isActive = active.has(id); const placement = placements[id]; const pack = placement && packs.find((item) => item.id === placement.packId);
-                const column = cellColumn(row, slot);
+                const column = cellColumn(row, slot, columnCount);
                 return <button key={id} style={{ position: "absolute", left: `calc(50% + ${column * 54}px)`, top: row * 30, width: 70, height: 60, transform: "translateX(-50%)" }} className={`hex-cell ${isActive ? "is-active" : ""} ${placement ? "has-pack" : ""} tool-${boardTool}`} onClick={() => handleBoardClick(id)} onContextMenu={(event) => { event.preventDefault(); if (placement) setContextMenu({ cellId: id, x: event.clientX, y: event.clientY }); }} title={`${id} · column ${column}${pack ? ` — ${pack.name}. Правый клик — действия` : ""}`}>
                   {pack && <PieceStack items={pack.items} colors={colors} />}{placement && <span className={`lock ${placement.locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); toggleLock(id); }} title={placement.locked ? "Снять замок" : "Установить замок"}>🔒</span>}
                   {!isActive && <span className="plus">+</span>}
