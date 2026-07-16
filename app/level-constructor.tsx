@@ -301,7 +301,7 @@ export default function LevelConstructor() {
         <aside className="right-panel panel">
           <div className="tabs"><span className="active">Пачки</span><span>Очередь</span></div>
           <div className="scroll-content">
-            <div className="section-title"><div><h2>Библиотека пачек</h2><p>Общие стопки уровня</p></div><button className="icon-button" onClick={() => setPackDraft({ name: `Новая пачка ${packs.length + 1}`, items: [] })} title="Создать пачку">+</button></div>
+            <div className="section-title"><div><h2>Библиотека пачек</h2><p>Перетащите пачку на активную ячейку поля</p></div><button className="icon-button" onClick={() => setPackDraft({ name: `Новая пачка ${packs.length + 1}`, items: [] })} title="Создать пачку">+</button></div>
             <div className="pack-list">{packs.map((pack) => <article className={`pack-card ${selectedPack === pack.id ? "selected" : ""} ${draggingPackId === pack.id ? "is-dragging" : ""}`} key={pack.id} draggable onDragStart={(event) => { event.dataTransfer.effectAllowed = "copy"; event.dataTransfer.setData("application/x-hexa-pack", pack.id); setDraggingPackId(pack.id); setSelectedPack(pack.id); }} onDragEnd={() => { setDraggingPackId(null); setDragTargetCell(null); }} onClick={() => setSelectedPack(pack.id)} title="Перетащите пачку на активную ячейку поля">
               <PieceStack items={pack.items} colors={colors} small />
               <div><input value={pack.name} onClick={(e) => e.stopPropagation()} onChange={(event) => updatePack(pack.id, { name: event.target.value })} /><small>{pack.id} · {pack.items.length} шт.</small></div>
