@@ -6,6 +6,7 @@ type Color = { id: number; name: string; hex: string; sprite: string };
 type Pack = { id: string; name: string; items: number[] };
 type Placement = { packId: string; locked: boolean };
 type QueueItem = { kind: "pack"; packId: string } | { kind: "random" };
+type RandomPack = { packId: string; weight: number };
 
 const INITIAL_COLORS: Color[] = [
   { id: 1, name: "Розовый", hex: "#ff3fa3", sprite: "hex-pink" },
@@ -22,6 +23,12 @@ const INITIAL_PACKS: Pack[] = [
   { id: "pack-yellow-3", name: "3 жёлтых", items: [4, 4, 4] },
   { id: "pack-red-3", name: "3 красных", items: [6, 6, 6] },
   { id: "pack-mix-3", name: "Микс", items: [1, 2, 3] },
+];
+
+const INITIAL_RANDOM_PACKS: RandomPack[] = [
+  { packId: "pack-yellow-3", weight: 10 },
+  { packId: "pack-red-3", weight: 10 },
+  { packId: "pack-mix-3", weight: 10 },
 ];
 
 const DEFAULT_CELLS = [
@@ -82,12 +89,13 @@ export default function LevelConstructor() {
     { kind: "pack", packId: "pack-red-3" },
     { kind: "pack", packId: "pack-mix-3" },
   ]);
-  const [weights, setWeights] = useState<Record<string, number>>({ "pack-yellow-3": 10, "pack-red-3": 10, "pack-mix-3": 10 });
+  const [randomPacks, setRandomPacks] = useState<RandomPack[]>(INITIAL_RANDOM_PACKS);
   const [notice, setNotice] = useState("");
   const [contextMenu, setContextMenu] = useState<{ cellId: string; x: number; y: number } | null>(null);
   const [packDraft, setPackDraft] = useState<{ name: string; items: number[] } | null>(null);
 
   const rows = useMemo(() => makeRows(active), [active]);
+  const randomWeightTotal = useMemo(() => randomPacks.reduce((sum, entry) => sum + Math.max(0, entry.weight), 0), [randomPacks]);
   const config = useMemo(() => {
     const boardCells = rows.flatMap(({ columns }, row) => columns.map((column, slot) => ({ id: `${row}:${slot}`, row, slot, column })));
     const exportedCellIds = new Map<string, string>();
@@ -113,10 +121,10 @@ export default function LevelConstructor() {
         .map(([id, placement], index) => ({ id: `board-stack-${index + 1}`, cellId: exportedCellIds.get(id) ?? id, packId: placement.packId, items: packs.find((pack) => pack.id === placement.packId)?.items ?? [], ...(placement.locked ? { blocker: "lock" } : {}) })),
       handStacks: firstThree,
       stackQueue: hardPacks.slice(3),
-      randomQueue: { packs: packs.filter((pack) => (weights[pack.id] ?? 0) > 0).map((pack) => ({ packId: pack.id, weight: weights[pack.id] })) },
+      randomQueue: { packs: randomPacks.filter((entry) => entry.weight > 0 && packs.some((pack) => pack.id === entry.packId)).map((entry) => ({ packId: entry.packId, weight: entry.weight })) },
       library: { colors, packs },
     };
-  }, [active, colors, levelId, packs, placements, queue, rows, targetColor, targetScore, targetType, title, weights]);
+  }, [active, colors, levelId, packs, placements, queue, randomPacks, rows, targetColor, targetScore, targetType, title]);
 
   function toggleCell(id: string) {
     setActive((current) => {
@@ -153,9 +161,21 @@ export default function LevelConstructor() {
     while (packs.some((pack) => pack.id === `pack-${sequence}`)) sequence += 1;
     const id = `pack-${sequence}`;
     setPacks((value) => [...value, { id, name: packDraft.name.trim() || `Новая пачка ${sequence}`, items: packDraft.items }]);
-    setWeights((value) => ({ ...value, [id]: 10 }));
     setSelectedPack(id);
     setPackDraft(null);
+  }
+
+  function addRandomPack() {
+    setRandomPacks((current) => {
+      const packId = current.some((entry) => entry.packId === selectedPack)
+        ? packs.find((pack) => !current.some((entry) => entry.packId === pack.id))?.id
+        : selectedPack;
+      return packId ? [...current, { packId, weight: 10 }] : current;
+    });
+  }
+
+  function updateRandomPack(index: number, patch: Partial<RandomPack>) {
+    setRandomPacks((current) => current.map((entry, entryIndex) => entryIndex === index ? { ...entry, ...patch } : entry));
   }
 
   function moveDraftItem(from: number, to: number) {
@@ -239,13 +259,35 @@ export default function LevelConstructor() {
             </article>)}</div>
 
             <div className="section-rule" />
-            <div className="section-title"><div><h2>Жёсткая очередь</h2><p>До 9 пачек, первые 3 — рука</p></div><b>{queue.length}/9</b></div>
-            <div className="queue-grid">{queue.map((item, index) => <div className="queue-item" key={index}><span>{index + 1}</span><select value={item.kind === "random" ? "random" : item.packId} onChange={(event) => setQueue((value) => value.map((entry, i) => i === index ? event.target.value === "random" ? { kind: "random" } : { kind: "pack", packId: event.target.value } : entry))}><option value="random">Random</option>{packs.map((pack) => <option key={pack.id} value={pack.id}>{pack.name}</option>)}</select><button onClick={() => setQueue((value) => value.filter((_, i) => i !== index))}>×</button></div>)}</div>
+            <div className="section-title"><div><h2>Жёсткая очередь</h2><p>Первые 3 пачки под полем, остальные идут следом (до 9)</p></div><b>{queue.length}/9</b></div>
+            <div className="queue-grid">{queue.map((item, index) => <div className="queue-item" key={index}><span>{index + 1}</span><select value={item.kind === "random" ? "random" : item.packId} onChange={(event) => setQueue((value) => value.map((entry, i) => i === index ? event.target.value === "random" ? { kind: "random" } : { kind: "pack", packId: event.target.value } : entry))}><option value="random">Random по весам</option>{packs.map((pack) => <option key={pack.id} value={pack.id}>{pack.name}</option>)}</select><button onClick={() => setQueue((value) => value.filter((_, i) => i !== index))}>×</button></div>)}</div>
             <button className="wide-button" disabled={queue.length >= 9} onClick={() => setQueue((value) => [...value, { kind: "pack", packId: selectedPack }])}>+ Добавить в очередь</button>
 
             <div className="section-rule" />
-            <div className="section-title"><div><h2>Случайная выдача</h2><p>После жёсткой очереди</p></div></div>
-            <div className="weights">{packs.map((pack) => <label key={pack.id}><span>{pack.name}</span><input type="number" min="0" value={weights[pack.id] ?? 0} onChange={(event) => setWeights((value) => ({ ...value, [pack.id]: Math.max(0, Number(event.target.value)) }))} /><em>вес</em></label>)}</div>
+            <div className="section-title"><div><h2>Случайная выдача</h2><p>После жёсткой очереди и для Random</p></div></div>
+            <div className="random-list">
+              {randomPacks.length === 0 && <div className="random-empty">Добавьте хотя бы одну пачку с весом больше 0</div>}
+              {randomPacks.map((entry, index) => {
+                const pack = packs.find((item) => item.id === entry.packId);
+                const share = randomWeightTotal > 0 && entry.weight > 0 ? Math.round((entry.weight / randomWeightTotal) * 100) : 0;
+                return (
+                  <article className={`random-card ${entry.weight <= 0 ? "is-muted" : ""}`} key={`${entry.packId}-${index}`}>
+                    <span className="random-number">{index + 1}</span>
+                    <select className="random-pack-select" value={entry.packId} onChange={(event) => updateRandomPack(index, { packId: event.target.value })} aria-label="Пачка для случайной выдачи">
+                      {packs.map((packItem) => <option key={packItem.id} value={packItem.id} disabled={randomPacks.some((item, itemIndex) => itemIndex !== index && item.packId === packItem.id)}>{packItem.name}</option>)}
+                    </select>
+                    <div className="random-weight">
+                      <span title="Вес">Вес</span>
+                      <input type="number" min="0" value={entry.weight} onChange={(event) => updateRandomPack(index, { weight: Math.max(0, Number(event.target.value)) })} aria-label={`Вес ${pack?.name ?? "пачки"}`} />
+                    </div>
+                    <strong className="random-share">{share > 0 ? `${share}%` : "0%"}</strong>
+                    <button className="random-remove" onClick={() => setRandomPacks((value) => value.filter((_, itemIndex) => itemIndex !== index))} title="Убрать из случайной выдачи" aria-label={`Убрать ${pack?.name ?? "пачку"} из случайной выдачи`}>×</button>
+                  </article>
+                );
+              })}
+            </div>
+            <p className="random-note">Чем больше вес, тем чаще пачка выпадает. Например, вес 20 выпадает примерно в 2 раза чаще веса 10.</p>
+            <button className="wide-button" disabled={packs.every((pack) => randomPacks.some((entry) => entry.packId === pack.id))} onClick={addRandomPack}>+ Добавить пачку</button>
 
             <div className="section-rule" />
             <div className="section-title"><div><h2>Палитра</h2><p>ID и визуал цветов</p></div></div>
