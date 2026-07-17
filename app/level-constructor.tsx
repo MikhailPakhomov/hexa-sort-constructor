@@ -267,6 +267,35 @@ export default function LevelConstructor() {
     setColorDraft(null);
   }
 
+  function deleteColor(colorIdFromList?: string) {
+    const colorId = colorIdFromList ?? colorDraft?.originalId;
+    if (!colorId || colors.length <= 1) return;
+    const color = colors.find((item) => item.id === colorId);
+    const affectedPacks = packs.filter((pack) => pack.items.includes(colorId));
+    const confirmed = window.confirm(affectedPacks.length > 0
+      ? `Цвет «${color?.name ?? colorId}» используется в ${affectedPacks.length} пачках. Удалить его из палитры и из состава этих пачек? Пустые пачки также будут удалены.`
+      : `Удалить цвет «${color?.name ?? colorId}» из палитры?`);
+    if (!confirmed) return;
+
+    const nextPacks = packs
+      .map((pack) => ({ ...pack, items: pack.items.filter((item) => item !== colorId) }))
+      .filter((pack) => pack.items.length > 0);
+    const nextPackIds = new Set(nextPacks.map((pack) => pack.id));
+    const fallbackPackId = nextPacks[0]?.id ?? "";
+    const fallbackColorId = colors.find((item) => item.id !== colorId)?.id ?? "";
+
+    setColors((value) => value.filter((item) => item.id !== colorId));
+    setPacks(nextPacks);
+    setPlacements((value) => Object.fromEntries(Object.entries(value).filter(([, placement]) => nextPackIds.has(placement.packId))));
+    setQueue((value) => value.filter((item) => item.kind === "random" || nextPackIds.has(item.packId)));
+    setRandomPacks((value) => value.filter((item) => nextPackIds.has(item.packId)));
+    setSelectedPack((value) => nextPackIds.has(value) ? value : fallbackPackId);
+    setTargetColor((value) => value === colorId ? fallbackColorId : value);
+    setColorDraft(null);
+    setNotice("Цвет удалён");
+    window.setTimeout(() => setNotice(""), 2200);
+  }
+
   function dropPack(id: string, packId: string) {
     if (!active.has(id) || !packs.some((pack) => pack.id === packId)) return;
     setPlacements((current) => ({ ...current, [id]: { packId, locked: false, unlockHexCount: 10 } }));
@@ -476,7 +505,7 @@ export default function LevelConstructor() {
 
             <div className="section-rule" />
             <div className="section-title"><div><h2>Палитра</h2><p>ID и визуал цветов</p></div><button className="icon-button" onClick={openColorEditor} title="Добавить цвет" aria-label="Добавить цвет">+</button></div>
-            <div className="color-list">{colors.map((color) => <div className="color-row" key={color.id} onDoubleClick={() => editColor(color)}><i className="color-row-swatch" style={{ background: color.hex }} /><div className="color-info"><strong>{color.name}</strong><span title={`ID: ${color.id}`}>ID: {color.id}</span></div><button type="button" className="color-edit" onClick={() => editColor(color)} title={`Редактировать ${color.name}`} aria-label={`Редактировать ${color.name}`}><span>✎</span>Изменить</button></div>)}</div>
+            <div className="color-list">{colors.map((color) => <div className="color-row" key={color.id} onDoubleClick={() => editColor(color)}><i className="color-row-swatch" style={{ background: color.hex }} /><div className="color-info"><strong>{color.name}</strong><span title={`ID: ${color.id}`}>ID: {color.id}</span></div><div className="color-actions"><button type="button" className="color-edit" onClick={() => editColor(color)} title={`Редактировать ${color.name}`} aria-label={`Редактировать ${color.name}`}><span>✎</span>Изменить</button><button type="button" className="color-remove" disabled={colors.length <= 1} onClick={(event) => { event.stopPropagation(); deleteColor(color.id); }} title={`Удалить ${color.name}`} aria-label={`Удалить ${color.name}`}>×</button></div></div>)}</div>
           </div>
         </aside>
       </section>
@@ -501,7 +530,7 @@ export default function LevelConstructor() {
           <label>Название<input value={colorDraft.name} onChange={(event) => setColorDraft({ ...colorDraft, name: event.target.value })} placeholder="Например, Фиолетовый" /></label>
           <label>Цвет<div className="color-picker-field"><input type="color" value={colorDraft.hex} onChange={(event) => setColorDraft({ ...colorDraft, hex: event.target.value })} /><code>{colorDraft.hex.toUpperCase()}</code></div></label>
         </div>
-        <footer><span title={colorDraft.id.trim()}>ID: {colorDraft.id.trim() || "—"}</span><div><button className="modal-cancel" onClick={() => setColorDraft(null)}>Отмена</button><button className="primary" disabled={!colorDraft.id.trim() || !colorDraft.name.trim() || colors.some((color) => color.id === colorDraft.id.trim() && color.id !== colorDraft.originalId)} onClick={saveColor}>{colorDraft.originalId ? "Сохранить" : "Добавить цвет"}</button></div></footer>
+        <footer><span title={colorDraft.id.trim()}>ID: {colorDraft.id.trim() || "—"}</span><div>{colorDraft.originalId && <button className="color-delete" disabled={colors.length <= 1} onClick={() => deleteColor()}>Удалить цвет</button>}<button className="modal-cancel" onClick={() => setColorDraft(null)}>Отмена</button><button className="primary" disabled={!colorDraft.id.trim() || !colorDraft.name.trim() || colors.some((color) => color.id === colorDraft.id.trim() && color.id !== colorDraft.originalId)} onClick={saveColor}>{colorDraft.originalId ? "Сохранить" : "Добавить цвет"}</button></div></footer>
       </section></div>}
       {testLevel && <GamePreview level={testLevel} onClose={() => setTestLevel(null)} />}
       {notice && <div className="toast">{notice}</div>}
