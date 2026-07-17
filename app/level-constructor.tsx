@@ -1,6 +1,10 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
+import type { HexaSortLevelConfig } from "./game/types";
+
+const GamePreview = dynamic(() => import("./game/GamePreview"), { ssr: false });
 
 type Color = { id: string; name: string; hex: string; sprite: string };
 type Pack = { id: string; name: string; items: string[] };
@@ -126,6 +130,7 @@ export default function LevelConstructor() {
   const [dragTargetCell, setDragTargetCell] = useState<string | null>(null);
   const [savedLevels, setSavedLevels] = useState<SavedLevel[]>([]);
   const [selectedSavedLevel, setSelectedSavedLevel] = useState("");
+  const [testLevel, setTestLevel] = useState<HexaSortLevelConfig | null>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -142,7 +147,7 @@ export default function LevelConstructor() {
   const rows = useMemo(() => makeRows(active, rowCount, columnCount), [active, columnCount, rowCount]);
   const initialHand = useMemo(() => Array.from({ length: 3 }, (_, index) => queue[index] ?? null), [queue]);
   const randomWeightTotal = useMemo(() => randomPacks.reduce((sum, entry) => sum + Math.max(0, entry.weight), 0), [randomPacks]);
-  const config = useMemo(() => {
+  const config = useMemo<HexaSortLevelConfig>(() => {
     const boardCells = rows.flatMap(({ columns }, row) => columns.map((column, slot) => ({ id: `${row}:${slot}`, row, slot, column })));
     const exportedCellIds = new Map<string, string>();
     Array.from({ length: rowCount }, (_, row) => {
@@ -150,7 +155,7 @@ export default function LevelConstructor() {
       activeSlots.forEach((gridSlot, exportSlot) => exportedCellIds.set(cellId(row, gridSlot), `${row}:${exportSlot}`));
     });
     const hardPacks = queue.map((item, index) => item.kind === "random"
-      ? { id: `queue-random-${index + 1}`, type: "random" }
+      ? { id: `queue-random-${index + 1}`, type: "random" as const }
       : { id: `queue-stack-${index + 1}`, packId: item.packId, items: packs.find((pack) => pack.id === item.packId)?.items ?? [] });
     const firstThree = hardPacks.slice(0, 3).map((stack, index) => ({ ...stack, id: `hand-stack-${index + 1}` }));
     return {
@@ -357,6 +362,7 @@ export default function LevelConstructor() {
             {savedLevels.map((level) => <option key={level.id} value={level.id}>{level.title} · {level.id}</option>)}
           </select>
           <button className="save-level" onClick={saveLevel}>Сохранить уровень</button>
+          <button className="test-button" onClick={() => setTestLevel(config)}>▶ Тестировать</button>
           <button className="secondary" onClick={() => navigator.clipboard.writeText(JSON.stringify(config, null, 2)).then(() => setNotice("JSON скопирован"))}>Копировать JSON</button>
           <button className="primary" onClick={download}>Скачать JSON</button>
         </div>
@@ -483,6 +489,7 @@ export default function LevelConstructor() {
         </div>
         <footer><span title={colorDraft.id.trim()}>ID: {colorDraft.id.trim() || "—"}</span><div><button className="modal-cancel" onClick={() => setColorDraft(null)}>Отмена</button><button className="primary" disabled={!colorDraft.id.trim() || !colorDraft.name.trim() || colors.some((color) => color.id === colorDraft.id.trim())} onClick={saveColor}>Добавить цвет</button></div></footer>
       </section></div>}
+      {testLevel && <GamePreview level={testLevel} onClose={() => setTestLevel(null)} />}
       {notice && <div className="toast">{notice}</div>}
     </main>
   );
