@@ -92,6 +92,43 @@ function makeRows(active: Set<string>, rowCount: number, columnCount: number) {
   }));
 }
 
+function createLevelConfig(snapshot: LevelSnapshot): HexaSortLevelConfig {
+  const { active: activeCellIds, colors, columnCount, levelId, packs, placements, queue, randomPacks, rowCount, targetColor, targetScore, targetType, title } = snapshot;
+  const active = new Set(activeCellIds);
+  const rows = makeRows(active, rowCount, columnCount);
+  const boardCells = rows.flatMap(({ columns }, row) => columns.map((column, slot) => ({ id: `${row}:${slot}`, row, slot, column })));
+  const exportedCellIds = new Map<string, string>();
+
+  Array.from({ length: rowCount }, (_, row) => {
+    const activeSlots = Array.from({ length: slotsInRow(row, columnCount) }, (_, slot) => slot)
+      .filter((slot) => active.has(cellId(row, slot)));
+    activeSlots.forEach((gridSlot, exportSlot) => exportedCellIds.set(cellId(row, gridSlot), `${row}:${exportSlot}`));
+  });
+
+  const hardPacks = queue.map((item, index) => item.kind === "random"
+    ? { id: `queue-random-${index + 1}`, type: "random" as const }
+    : { id: `queue-stack-${index + 1}`, packId: item.packId, items: packs.find((pack) => pack.id === item.packId)?.items ?? [] });
+
+  return {
+    id: levelId,
+    title,
+    targetScore,
+    target: { type: targetType, ...(targetType === "color" ? { colorId: targetColor } : {}) },
+    board: { columnCount, rowCount, rows, cells: boardCells },
+    initialStacks: Object.entries(placements)
+      .filter(([id]) => active.has(id))
+      .map(([id, placement], index) => ({ id: `board-stack-${index + 1}`, cellId: exportedCellIds.get(id) ?? id, packId: placement.packId, items: packs.find((pack) => pack.id === placement.packId)?.items ?? [], ...(placement.locked ? { blocker: "lock" as const, unlockHexCount: placement.unlockHexCount ?? 10 } : {}) })),
+    handStacks: hardPacks.slice(0, 3).map((stack, index) => ({ ...stack, id: `hand-stack-${index + 1}` })),
+    stackQueue: hardPacks.slice(3),
+    randomQueue: { packs: randomPacks.filter((entry) => entry.weight > 0 && packs.some((pack) => pack.id === entry.packId)).map((entry) => ({ packId: entry.packId, weight: entry.weight })) },
+    library: { colors, packs },
+  };
+}
+
+function safeFileName(value: string) {
+  return value.trim().replace(/[<>:"/\\|?*\u0000-\u001F]/g, "-").replace(/[. ]+$/g, "") || "level";
+}
+
 function PieceStack({ items, colors, small = false }: { items: string[]; colors: Color[]; small?: boolean }) {
   return (
     <span className={`piece-stack ${small ? "small" : ""}`} aria-label={`${items.length} элементов`}>
@@ -144,40 +181,12 @@ export default function LevelConstructor() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  const rows = useMemo(() => makeRows(active, rowCount, columnCount), [active, columnCount, rowCount]);
   const initialHand = useMemo(() => Array.from({ length: 3 }, (_, index) => queue[index] ?? null), [queue]);
   const randomWeightTotal = useMemo(() => randomPacks.reduce((sum, entry) => sum + Math.max(0, entry.weight), 0), [randomPacks]);
-  const config = useMemo<HexaSortLevelConfig>(() => {
-    const boardCells = rows.flatMap(({ columns }, row) => columns.map((column, slot) => ({ id: `${row}:${slot}`, row, slot, column })));
-    const exportedCellIds = new Map<string, string>();
-    Array.from({ length: rowCount }, (_, row) => {
-      const activeSlots = Array.from({ length: slotsInRow(row, columnCount) }, (_, slot) => slot).filter((slot) => active.has(cellId(row, slot)));
-      activeSlots.forEach((gridSlot, exportSlot) => exportedCellIds.set(cellId(row, gridSlot), `${row}:${exportSlot}`));
-    });
-    const hardPacks = queue.map((item, index) => item.kind === "random"
-      ? { id: `queue-random-${index + 1}`, type: "random" as const }
-      : { id: `queue-stack-${index + 1}`, packId: item.packId, items: packs.find((pack) => pack.id === item.packId)?.items ?? [] });
-    const firstThree = hardPacks.slice(0, 3).map((stack, index) => ({ ...stack, id: `hand-stack-${index + 1}` }));
-    return {
-      id: levelId,
-      title,
-      targetScore,
-      target: { type: targetType, ...(targetType === "color" ? { colorId: targetColor } : {}) },
-      board: {
-        columnCount,
-        rowCount,
-        rows,
-        cells: boardCells,
-      },
-      initialStacks: Object.entries(placements)
-        .filter(([id]) => active.has(id))
-        .map(([id, placement], index) => ({ id: `board-stack-${index + 1}`, cellId: exportedCellIds.get(id) ?? id, packId: placement.packId, items: packs.find((pack) => pack.id === placement.packId)?.items ?? [], ...(placement.locked ? { blocker: "lock", unlockHexCount: placement.unlockHexCount ?? 10 } : {}) })),
-      handStacks: firstThree,
-      stackQueue: hardPacks.slice(3),
-      randomQueue: { packs: randomPacks.filter((entry) => entry.weight > 0 && packs.some((pack) => pack.id === entry.packId)).map((entry) => ({ packId: entry.packId, weight: entry.weight })) },
-      library: { colors, packs },
-    };
-  }, [active, colors, columnCount, levelId, packs, placements, queue, randomPacks, rowCount, rows, targetColor, targetScore, targetType, title]);
+  const config = useMemo(() => createLevelConfig({
+    levelId, title, targetScore, targetType, targetColor, columnCount, rowCount,
+    active: [...active], placements, colors, packs, selectedPack, queue, randomPacks,
+  }), [active, colors, columnCount, levelId, packs, placements, queue, randomPacks, rowCount, selectedPack, targetColor, targetScore, targetType, title]);
 
   function resizeBoard(nextColumnCount: number, nextRowCount: number) {
     const columns = Math.min(MAX_COLUMN_COUNT, Math.max(MIN_BOARD_SIZE, nextColumnCount));
@@ -338,6 +347,36 @@ export default function LevelConstructor() {
     window.setTimeout(() => setNotice(""), 2200);
   }
 
+  async function downloadAllSavedLevels() {
+    if (savedLevels.length === 0) return;
+    try {
+      const { default: JSZip } = await import("jszip");
+      const zip = new JSZip();
+      const usedNames = new Set<string>();
+
+      savedLevels.forEach((saved) => {
+        const baseName = safeFileName(saved.id);
+        let fileName = `${baseName}.json`;
+        let suffix = 2;
+        while (usedNames.has(fileName.toLocaleLowerCase())) fileName = `${baseName}-${suffix++}.json`;
+        usedNames.add(fileName.toLocaleLowerCase());
+        zip.file(fileName, JSON.stringify(createLevelConfig(saved.snapshot), null, 2));
+      });
+
+      const blob = await zip.generateAsync({ type: "blob" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "hexa-sort-levels.zip";
+      link.click();
+      URL.revokeObjectURL(url);
+      setNotice(`Скачан архив: ${savedLevels.length} уровней`);
+      window.setTimeout(() => setNotice(""), 2200);
+    } catch {
+      setNotice("Не удалось создать архив");
+    }
+  }
+
   function saveLevel() {
     const id = levelId.trim();
     if (!id) {
@@ -400,6 +439,7 @@ export default function LevelConstructor() {
       <header className="topbar">
         <div className="brand"><span className="brand-mark">H</span><div><strong>Hexa Sort</strong><small>Конструктор уровней</small></div></div>
         <div className="top-actions">
+          <button className="download-all" disabled={savedLevels.length === 0} onClick={downloadAllSavedLevels}>Скачать ZIP</button>
           <select className="saved-level-select" aria-label="Сохранённые уровни" value={selectedSavedLevel} onChange={(event) => loadLevel(event.target.value)}>
             <option value="">Сохранённые уровни ({savedLevels.length})</option>
             {savedLevels.map((level) => <option key={level.id} value={level.id}>{level.title} · {level.id}</option>)}
