@@ -125,7 +125,7 @@ export default function LevelConstructor() {
   const [notice, setNotice] = useState("");
   const [contextMenu, setContextMenu] = useState<{ cellId: string; x: number; y: number } | null>(null);
   const [packDraft, setPackDraft] = useState<{ id?: string; name: string; items: string[] } | null>(null);
-  const [colorDraft, setColorDraft] = useState<{ id: string; name: string; hex: string } | null>(null);
+  const [colorDraft, setColorDraft] = useState<{ originalId?: string; id: string; name: string; hex: string } | null>(null);
   const [draggingPackId, setDraggingPackId] = useState<string | null>(null);
   const [dragTargetCell, setDragTargetCell] = useState<string | null>(null);
   const [savedLevels, setSavedLevels] = useState<SavedLevel[]>([]);
@@ -246,10 +246,24 @@ export default function LevelConstructor() {
     setColorDraft({ id: `color-${sequence}`, name: "Новый цвет", hex: "#8b5cf6" });
   }
 
+  function editColor(color: Color) {
+    setColorDraft({ originalId: color.id, id: color.id, name: color.name, hex: color.hex });
+  }
+
   function saveColor() {
     const id = colorDraft?.id.trim() ?? "";
-    if (!colorDraft || !id || !colorDraft.name.trim() || colors.some((color) => color.id === id)) return;
-    setColors((value) => [...value, { ...colorDraft, id, name: colorDraft.name.trim(), sprite: `hex-custom-${id}` }]);
+    if (!colorDraft || !id || !colorDraft.name.trim() || colors.some((color) => color.id === id && color.id !== colorDraft.originalId)) return;
+    const nextColor = { id, name: colorDraft.name.trim(), hex: colorDraft.hex, sprite: `hex-custom-${id}` };
+    if (colorDraft.originalId) {
+      const originalId = colorDraft.originalId;
+      setColors((value) => value.map((color) => color.id === originalId ? nextColor : color));
+      if (originalId !== id) {
+        setPacks((value) => value.map((pack) => ({ ...pack, items: pack.items.map((colorId) => colorId === originalId ? id : colorId) })));
+        setTargetColor((value) => value === originalId ? id : value);
+      }
+    } else {
+      setColors((value) => [...value, nextColor]);
+    }
     setColorDraft(null);
   }
 
@@ -462,7 +476,7 @@ export default function LevelConstructor() {
 
             <div className="section-rule" />
             <div className="section-title"><div><h2>Палитра</h2><p>ID и визуал цветов</p></div><button className="icon-button" onClick={openColorEditor} title="Добавить цвет" aria-label="Добавить цвет">+</button></div>
-            <div className="color-list">{colors.map((color) => <label key={color.id}><input type="color" value={color.hex} onChange={(event) => setColors((value) => value.map((item) => item.id === color.id ? { ...item, hex: event.target.value } : item))} /><input value={color.name} onChange={(event) => setColors((value) => value.map((item) => item.id === color.id ? { ...item, name: event.target.value } : item))} /><span title={`ID: ${color.id}`}>ID: {color.id}</span></label>)}</div>
+            <div className="color-list">{colors.map((color) => <div className="color-row" key={color.id} onDoubleClick={() => editColor(color)}><i className="color-row-swatch" style={{ background: color.hex }} /><div className="color-info"><strong>{color.name}</strong><span title={`ID: ${color.id}`}>ID: {color.id}</span></div><button type="button" className="color-edit" onClick={() => editColor(color)} title={`Редактировать ${color.name}`} aria-label={`Редактировать ${color.name}`}><span>✎</span>Изменить</button></div>)}</div>
           </div>
         </aside>
       </section>
@@ -480,14 +494,14 @@ export default function LevelConstructor() {
       </section></div>}
       {contextMenu && placements[contextMenu.cellId] && <div className="context-backdrop" onPointerDown={() => setContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setContextMenu(null); }}><div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()}><small>Действия с пачкой</small><button onClick={() => toggleLock(contextMenu.cellId)}><span>{placements[contextMenu.cellId].locked ? "🔓" : "🔒"}</span>{placements[contextMenu.cellId].locked ? "Снять замок" : "Установить замок"}</button>{placements[contextMenu.cellId].locked && <label className="lock-count-field"><span>Гексов для снятия</span><input key={`${contextMenu.cellId}-${placements[contextMenu.cellId].unlockHexCount ?? 10}`} type="number" min="1" defaultValue={placements[contextMenu.cellId].unlockHexCount ?? 10} onBlur={(event) => updateUnlockHexCount(contextMenu.cellId, Number(event.target.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>}<button className="danger" onClick={() => { setPlacements((value) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== contextMenu.cellId))); setContextMenu(null); }}><span>×</span>Убрать пачку</button></div></div>}
       {colorDraft && <div className="modal-backdrop" onPointerDown={() => setColorDraft(null)}><section className="pack-modal color-modal" onPointerDown={(event) => event.stopPropagation()}>
-        <header><div><p className="eyebrow">Палитра</p><h2>Новый цвет</h2></div><button onClick={() => setColorDraft(null)} aria-label="Закрыть">×</button></header>
+        <header><div><p className="eyebrow">Палитра</p><h2>{colorDraft.originalId ? "Редактирование цвета" : "Новый цвет"}</h2></div><button onClick={() => setColorDraft(null)} aria-label="Закрыть">×</button></header>
         <div className="color-editor">
           <label>ID<input autoFocus value={colorDraft.id} onChange={(event) => setColorDraft({ ...colorDraft, id: event.target.value })} placeholder="Например, purple или color_special" /></label>
-          {colors.some((color) => color.id === colorDraft.id.trim()) && <p className="form-error">Цвет с ID {colorDraft.id.trim()} уже существует.</p>}
+          {colors.some((color) => color.id === colorDraft.id.trim() && color.id !== colorDraft.originalId) && <p className="form-error">Цвет с ID {colorDraft.id.trim()} уже существует.</p>}
           <label>Название<input value={colorDraft.name} onChange={(event) => setColorDraft({ ...colorDraft, name: event.target.value })} placeholder="Например, Фиолетовый" /></label>
           <label>Цвет<div className="color-picker-field"><input type="color" value={colorDraft.hex} onChange={(event) => setColorDraft({ ...colorDraft, hex: event.target.value })} /><code>{colorDraft.hex.toUpperCase()}</code></div></label>
         </div>
-        <footer><span title={colorDraft.id.trim()}>ID: {colorDraft.id.trim() || "—"}</span><div><button className="modal-cancel" onClick={() => setColorDraft(null)}>Отмена</button><button className="primary" disabled={!colorDraft.id.trim() || !colorDraft.name.trim() || colors.some((color) => color.id === colorDraft.id.trim())} onClick={saveColor}>Добавить цвет</button></div></footer>
+        <footer><span title={colorDraft.id.trim()}>ID: {colorDraft.id.trim() || "—"}</span><div><button className="modal-cancel" onClick={() => setColorDraft(null)}>Отмена</button><button className="primary" disabled={!colorDraft.id.trim() || !colorDraft.name.trim() || colors.some((color) => color.id === colorDraft.id.trim() && color.id !== colorDraft.originalId)} onClick={saveColor}>{colorDraft.originalId ? "Сохранить" : "Добавить цвет"}</button></div></footer>
       </section></div>}
       {testLevel && <GamePreview level={testLevel} onClose={() => setTestLevel(null)} />}
       {notice && <div className="toast">{notice}</div>}
