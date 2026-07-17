@@ -111,8 +111,8 @@ export default function LevelConstructor() {
   const [selectedPack, setSelectedPack] = useState(INITIAL_PACKS[0].id);
   const [columnCount, setColumnCount] = useState(DEFAULT_COLUMN_COUNT);
   const [rowCount, setRowCount] = useState(DEFAULT_ROW_COUNT);
-  const [levelId, setLevelId] = useState("level-8");
-  const [title, setTitle] = useState("Уровень 8");
+  const [levelId, setLevelId] = useState("level-1");
+  const [title, setTitle] = useState("Уровень 1");
   const [targetScore, setTargetScore] = useState(150);
   const [targetType, setTargetType] = useState<"any" | "color">("any");
   const [targetColor, setTargetColor] = useState("1");
@@ -378,7 +378,6 @@ export default function LevelConstructor() {
           <div className="segmented"><button className={targetType === "any" ? "active" : ""} onClick={() => setTargetType("any")}>Любой цвет</button><button className={targetType === "color" ? "active" : ""} onClick={() => setTargetType("color")}>Конкретный</button></div>
           {targetType === "color" && <label>Цвет<select value={targetColor} onChange={(event) => setTargetColor(event.target.value)}>{colors.map((color) => <option key={color.id} value={color.id}>{color.name}</option>)}</select></label>}
           <label>Количество<input type="number" min="1" value={targetScore} onChange={(event) => setTargetScore(Math.max(1, Number(event.target.value)))} /></label>
-          <div className="goal-preview"><span>Прогресс</span><strong>0 / {targetScore}</strong><i><b style={{ width: "12%" }} /></i></div>
           <div className="section-rule" />
           <h2>Настройки поля</h2>
           <div className="board-size-fields">
@@ -392,6 +391,7 @@ export default function LevelConstructor() {
 
         <section className="canvas-panel">
           <div className="canvas-head"><div><p className="eyebrow">Игровое поле</p><h1>Сетка {columnCount} × {rowCount}</h1></div><div className="stats"><span><b>{active.size}</b> слотов</span><span><b>{Object.keys(placements).length}</b> пачек</span></div></div>
+          <div className="board-target"><div className="board-target-content"><strong>Цель:</strong><i className={`board-target-icon ${targetType === "any" ? "any" : ""}`} style={targetType === "color" ? { background: colors.find((color) => color.id === targetColor)?.hex ?? "#bbb" } : undefined} /><span>{targetType === "any" ? "Любой цвет" : colors.find((color) => color.id === targetColor)?.name ?? targetColor}</span><b>× {targetScore}</b></div></div>
           <div className="board-wrap">
             <div className="board-stage">
               <div className="hex-board coordinate-grid" style={{ position: "relative", display: "block", width: columnCount * 130 + 72, height: rowCount * 36 + 48, padding: 0 }}>
