@@ -445,7 +445,6 @@ export default function LevelConstructor() {
             {savedLevels.map((level) => <option key={level.id} value={level.id}>{level.title} · {level.id}</option>)}
           </select>
           <button className="save-level" onClick={saveLevel}>Сохранить уровень</button>
-          <button className="test-button" onClick={() => setTestLevel(config)}>▶ Тестировать</button>
           <button className="secondary" onClick={() => navigator.clipboard.writeText(JSON.stringify(config, null, 2)).then(() => setNotice("JSON скопирован"))}>Копировать JSON</button>
           <button className="primary" onClick={download}>Скачать JSON</button>
         </div>
@@ -473,7 +472,7 @@ export default function LevelConstructor() {
         </aside>
 
         <section className="canvas-panel">
-          <div className="canvas-head"><div><p className="eyebrow">Игровое поле</p><h1>Сетка {columnCount} × {rowCount}</h1></div><div className="stats"><span><b>{active.size}</b> слотов</span><span><b>{Object.keys(placements).length}</b> пачек</span></div></div>
+          <div className="canvas-head"><div><p className="eyebrow">Игровое поле</p><h1>Сетка {columnCount} × {rowCount}</h1></div><button className="test-button" onClick={() => setTestLevel(config)}>▶ Тестировать</button><div className="stats"><span><b>{active.size}</b> слотов</span><span><b>{Object.keys(placements).length}</b> пачек</span></div></div>
           <div className="board-target"><div className="board-target-content"><strong>Цель:</strong><i className={`board-target-icon ${targetType === "any" ? "any" : ""}`} style={targetType === "color" ? { background: colors.find((color) => color.id === targetColor)?.hex ?? "#bbb" } : undefined} /><span>{targetType === "any" ? "Любой цвет" : colors.find((color) => color.id === targetColor)?.name ?? targetColor}</span><b>× {targetScore}</b></div></div>
           <div className="board-wrap">
             <div className="board-stage">
