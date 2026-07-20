@@ -32,6 +32,7 @@ type LevelSnapshot = {
 type SavedLevel = { id: string; title: string; updatedAt: string; snapshot: LevelSnapshot };
 
 const SAVED_LEVELS_KEY = "hexa-sort-constructor:saved-levels";
+const STARTER_LEVELS_SEEDED_KEY = "hexa-sort-constructor:starter-levels-seeded-v1";
 
 const INITIAL_COLORS: Color[] = [
   { id: "1", name: "Розовый", hex: "#ff3fa3", sprite: "hex-pink" },
@@ -73,6 +74,167 @@ const DEFAULT_ROW_COUNT = 9;
 const MIN_BOARD_SIZE = 2;
 const MAX_COLUMN_COUNT = 12;
 const MAX_ROW_COUNT = 16;
+
+const STARTER_LEVELS: SavedLevel[] = [
+  {
+    id: "level-easy-01",
+    title: "Простой 1 — Первые стопки",
+    updatedAt: "2026-07-20T10:01:00.000Z",
+    snapshot: {
+      levelId: "level-easy-01",
+      title: "Простой 1 — Первые стопки",
+      targetScore: 30,
+      targetType: "any",
+      targetColor: "4",
+      columnCount: DEFAULT_COLUMN_COUNT,
+      rowCount: DEFAULT_ROW_COUNT,
+      active: DEFAULT_CELLS,
+      placements: {
+        "4:1": { packId: "pack-yellow-3", locked: false },
+        "4:2": { packId: "pack-yellow-3", locked: false },
+      },
+      emptyCellLocks: {},
+      colors: INITIAL_COLORS,
+      packs: INITIAL_PACKS,
+      selectedPack: "pack-yellow-3",
+      queue: [
+        { kind: "pack", packId: "pack-yellow-3" },
+        { kind: "pack", packId: "pack-red-3" },
+        { kind: "pack", packId: "pack-yellow-3" },
+        { kind: "pack", packId: "pack-red-3" },
+        { kind: "pack", packId: "pack-mix-3" },
+      ],
+      randomPacks: INITIAL_RANDOM_PACKS,
+    },
+  },
+  {
+    id: "level-easy-02",
+    title: "Простой 2 — Первый замок",
+    updatedAt: "2026-07-20T10:02:00.000Z",
+    snapshot: {
+      levelId: "level-easy-02",
+      title: "Простой 2 — Первый замок",
+      targetScore: 50,
+      targetType: "any",
+      targetColor: "6",
+      columnCount: DEFAULT_COLUMN_COUNT,
+      rowCount: DEFAULT_ROW_COUNT,
+      active: DEFAULT_CELLS,
+      placements: {
+        "3:1": { packId: "pack-red-3", locked: false },
+        "4:2": { packId: "pack-yellow-3", locked: true, unlockHexCount: 10 },
+      },
+      emptyCellLocks: {},
+      colors: INITIAL_COLORS,
+      packs: INITIAL_PACKS,
+      selectedPack: "pack-red-3",
+      queue: [
+        { kind: "pack", packId: "pack-red-3" },
+        { kind: "pack", packId: "pack-red-3" },
+        { kind: "pack", packId: "pack-yellow-3" },
+        { kind: "pack", packId: "pack-mix-3" },
+        { kind: "pack", packId: "pack-red-3" },
+        { kind: "random" },
+      ],
+      randomPacks: INITIAL_RANDOM_PACKS,
+    },
+  },
+  {
+    id: "level-hard-01",
+    title: "Сложный 1 — Красная цель",
+    updatedAt: "2026-07-20T10:03:00.000Z",
+    snapshot: {
+      levelId: "level-hard-01",
+      title: "Сложный 1 — Красная цель",
+      targetScore: 100,
+      targetType: "color",
+      targetColor: "6",
+      columnCount: DEFAULT_COLUMN_COUNT,
+      rowCount: DEFAULT_ROW_COUNT,
+      active: DEFAULT_CELLS,
+      placements: {
+        "2:1": { packId: "pack-red-3", locked: true, unlockHexCount: 10 },
+        "4:1": { packId: "pack-mix-3", locked: false },
+        "4:3": { packId: "pack-yellow-3", locked: false },
+        "6:2": { packId: "pack-red-3", locked: true, unlockHexCount: 10 },
+      },
+      emptyCellLocks: {
+        "1:2": { unlockHexCount: 10 },
+        "7:1": { unlockHexCount: 10 },
+      },
+      colors: INITIAL_COLORS,
+      packs: INITIAL_PACKS,
+      selectedPack: "pack-red-3",
+      queue: [
+        { kind: "pack", packId: "pack-mix-3" },
+        { kind: "pack", packId: "pack-red-3" },
+        { kind: "pack", packId: "pack-yellow-3" },
+        { kind: "random" },
+        { kind: "pack", packId: "pack-red-3" },
+        { kind: "pack", packId: "pack-mix-3" },
+        { kind: "random" },
+        { kind: "pack", packId: "pack-yellow-3" },
+        { kind: "pack", packId: "pack-red-3" },
+        { kind: "random" },
+      ],
+      randomPacks: [
+        { packId: "pack-yellow-3", weight: 25 },
+        { packId: "pack-red-3", weight: 50 },
+        { packId: "pack-mix-3", weight: 25 },
+      ],
+    },
+  },
+  {
+    id: "level-hard-02",
+    title: "Сложный 2 — Закрытое поле",
+    updatedAt: "2026-07-20T10:04:00.000Z",
+    snapshot: {
+      levelId: "level-hard-02",
+      title: "Сложный 2 — Закрытое поле",
+      targetScore: 150,
+      targetType: "any",
+      targetColor: "4",
+      columnCount: DEFAULT_COLUMN_COUNT,
+      rowCount: DEFAULT_ROW_COUNT,
+      active: DEFAULT_CELLS,
+      placements: {
+        "2:1": { packId: "pack-yellow-3", locked: true, unlockHexCount: 10 },
+        "2:3": { packId: "pack-red-3", locked: true, unlockHexCount: 10 },
+        "4:2": { packId: "pack-mix-3", locked: false },
+        "6:1": { packId: "pack-red-3", locked: true, unlockHexCount: 10 },
+        "6:3": { packId: "pack-yellow-3", locked: true, unlockHexCount: 10 },
+      },
+      emptyCellLocks: {
+        "0:2": { unlockHexCount: 10 },
+        "3:2": { unlockHexCount: 10 },
+        "5:1": { unlockHexCount: 10 },
+        "8:2": { unlockHexCount: 10 },
+      },
+      colors: INITIAL_COLORS,
+      packs: INITIAL_PACKS,
+      selectedPack: "pack-mix-3",
+      queue: [
+        { kind: "pack", packId: "pack-yellow-3" },
+        { kind: "pack", packId: "pack-red-3" },
+        { kind: "pack", packId: "pack-mix-3" },
+        { kind: "random" },
+        { kind: "random" },
+        { kind: "pack", packId: "pack-mix-3" },
+        { kind: "pack", packId: "pack-red-3" },
+        { kind: "random" },
+        { kind: "pack", packId: "pack-yellow-3" },
+        { kind: "random" },
+        { kind: "pack", packId: "pack-red-3" },
+        { kind: "pack", packId: "pack-mix-3" },
+      ],
+      randomPacks: [
+        { packId: "pack-yellow-3", weight: 35 },
+        { packId: "pack-red-3", weight: 35 },
+        { packId: "pack-mix-3", weight: 30 },
+      ],
+    },
+  },
+];
 
 function cellId(row: number, slot: number) {
   return `${row}:${slot}`;
@@ -180,7 +342,16 @@ export default function LevelConstructor() {
     const timer = window.setTimeout(() => {
       try {
         const stored = window.localStorage.getItem(SAVED_LEVELS_KEY);
-        if (stored) setSavedLevels(JSON.parse(stored) as SavedLevel[]);
+        const saved = stored ? JSON.parse(stored) as SavedLevel[] : [];
+        const starterLevelsSeeded = window.localStorage.getItem(STARTER_LEVELS_SEEDED_KEY) === "true";
+        const savedIds = new Set(saved.map((level) => level.id));
+        const levels = starterLevelsSeeded
+          ? saved
+          : [...saved, ...STARTER_LEVELS.filter((level) => !savedIds.has(level.id))]
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        window.localStorage.setItem(SAVED_LEVELS_KEY, JSON.stringify(levels));
+        window.localStorage.setItem(STARTER_LEVELS_SEEDED_KEY, "true");
+        setSavedLevels(levels);
       } catch {
         setNotice("Не удалось прочитать сохранённые уровни");
       }
@@ -452,6 +623,22 @@ export default function LevelConstructor() {
     window.setTimeout(() => setNotice(""), 2200);
   }
 
+  function deleteSelectedLevel() {
+    const saved = savedLevels.find((level) => level.id === selectedSavedLevel);
+    if (!saved || !window.confirm(`Удалить уровень «${saved.title}»?`)) return;
+
+    const next = savedLevels.filter((level) => level.id !== saved.id);
+    try {
+      window.localStorage.setItem(SAVED_LEVELS_KEY, JSON.stringify(next));
+      setSavedLevels(next);
+      setSelectedSavedLevel("");
+      setNotice(`Уровень «${saved.title}» удалён`);
+      window.setTimeout(() => setNotice(""), 2200);
+    } catch {
+      setNotice("Не удалось удалить уровень");
+    }
+  }
+
   return (
     <main className="app-shell">
       <header className="topbar">
@@ -463,6 +650,7 @@ export default function LevelConstructor() {
             {savedLevels.map((level) => <option key={level.id} value={level.id}>{level.title} · {level.id}</option>)}
           </select>
           <button className="save-level" onClick={saveLevel}>Сохранить уровень</button>
+          <button className="delete-level" disabled={!selectedSavedLevel} onClick={deleteSelectedLevel}>Удалить</button>
           <button className="secondary" onClick={() => navigator.clipboard.writeText(JSON.stringify(config, null, 2)).then(() => setNotice("JSON скопирован"))}>Копировать JSON</button>
           <button className="primary" onClick={download}>Скачать JSON</button>
         </div>
