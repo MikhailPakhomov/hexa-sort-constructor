@@ -21,6 +21,9 @@ type BoardCellState = {
   y: number
   emptyView: Phaser.GameObjects.Image
   stackId: string | null
+  locked: boolean
+  unlockHexCount: number
+  lockView?: Phaser.GameObjects.Text
 }
 
 type StackLocation =
@@ -232,11 +235,21 @@ export class HexaSortScene extends Phaser.Scene {
       
 
       this.boardLayer?.add(emptyView)
-      const boardCell = {
+      const boardCell: BoardCellState = {
         ...cell,
         ...position,
         emptyView,
         stackId: null,
+        locked: cell.blocker === 'lock',
+        unlockHexCount: cell.unlockHexCount ?? RESOLVE_CONFIG.collapseSize,
+      }
+
+      if (boardCell.locked) {
+        boardCell.lockView = this.add.text(position.x, position.y - 4, '🔒', {
+          fontFamily: 'Arial, sans-serif',
+          fontSize: '24px',
+        }).setOrigin(0.5).setDepth(this.getBoardEmptyDepth({ ...position, column: cell.column }) + 1)
+        this.boardLayer?.add(boardCell.lockView)
       }
 
       this.boardCells.set(cell.id, boardCell)
@@ -659,7 +672,7 @@ export class HexaSortScene extends Phaser.Scene {
     let nearestDistance = Number.POSITIVE_INFINITY
 
     for (const cell of this.boardCells.values()) {
-      if (cell.stackId) {
+      if (cell.stackId || cell.locked) {
         continue
       }
 
@@ -957,7 +970,7 @@ export class HexaSortScene extends Phaser.Scene {
     const collapseColor = topRun[0]
 
     await this.animateCollapse(stack, collapseCount, collapseColor)
-    this.unlockAdjacentStacks(stack, collapseCount)
+    this.unlockAdjacentBlockers(stack, collapseCount)
 
     if (stack.items.length === 0) {
       this.removeBoardStack(stack)
@@ -1313,22 +1326,36 @@ export class HexaSortScene extends Phaser.Scene {
     this.updateBoardStackDepths()
   }
 
-  private unlockAdjacentStacks(source: StackState, collapsedCount: number) {
+  private unlockAdjacentBlockers(source: StackState, collapsedCount: number) {
     if (source.location.type !== 'board') return
 
     this.getNeighborCells(source.location.cellId).forEach((cell) => {
       const stack = this.getStackOnCell(cell.id)
-      if (!stack?.locked || collapsedCount < stack.unlockHexCount) return
-      stack.locked = false
-      stack.lockView?.destroy()
-      stack.lockView = undefined
-      this.tweens.add({ targets: stack.view, scaleX: 1.12, scaleY: 1.12, duration: 130, yoyo: true })
+      if (stack?.locked && collapsedCount >= stack.unlockHexCount) {
+        stack.locked = false
+        stack.lockView?.destroy()
+        stack.lockView = undefined
+        this.tweens.add({ targets: stack.view, scaleX: 1.12, scaleY: 1.12, duration: 130, yoyo: true })
+      }
+      if (cell.locked && collapsedCount >= cell.unlockHexCount) {
+        cell.locked = false
+        cell.lockView?.destroy()
+        cell.lockView = undefined
+        this.tweens.add({
+          targets: cell.emptyView,
+          scaleX: cell.emptyView.scaleX * 1.04,
+          scaleY: cell.emptyView.scaleY * 1.04,
+          duration: 110,
+          ease: 'Sine.easeOut',
+          yoyo: true,
+        })
+      }
     })
   }
 
   private evaluateGameState() {
     if (this.gameEnded || this.score >= this.level.targetScore) return
-    const hasEmptyCell = Array.from(this.boardCells.values()).some((cell) => !cell.stackId)
+    const hasEmptyCell = Array.from(this.boardCells.values()).some((cell) => !cell.stackId && !cell.locked)
     if (!hasEmptyCell) this.finishGame('defeat')
   }
 

@@ -9,6 +9,7 @@ const GamePreview = dynamic(() => import("./game/GamePreview"), { ssr: false });
 type Color = { id: string; name: string; hex: string; sprite: string };
 type Pack = { id: string; name: string; items: string[] };
 type Placement = { packId: string; locked: boolean; unlockHexCount?: number };
+type EmptyCellLock = { unlockHexCount: number };
 type QueueItem = { kind: "pack"; packId: string } | { kind: "random" };
 type RandomPack = { packId: string; weight: number };
 type LevelSnapshot = {
@@ -21,6 +22,7 @@ type LevelSnapshot = {
   rowCount: number;
   active: string[];
   placements: Record<string, Placement>;
+  emptyCellLocks: Record<string, EmptyCellLock>;
   colors: Color[];
   packs: Pack[];
   selectedPack: string;
@@ -93,7 +95,7 @@ function makeRows(active: Set<string>, rowCount: number, columnCount: number) {
 }
 
 function createLevelConfig(snapshot: LevelSnapshot): HexaSortLevelConfig {
-  const { active: activeCellIds, colors, columnCount, levelId, packs, placements, queue, randomPacks, rowCount, targetColor, targetScore, targetType, title } = snapshot;
+  const { active: activeCellIds, colors, columnCount, emptyCellLocks = {}, levelId, packs, placements, queue, randomPacks, rowCount, targetColor, targetScore, targetType, title } = snapshot;
   const active = new Set(activeCellIds);
   const rows = makeRows(active, rowCount, columnCount);
   const boardCells = rows.flatMap(({ columns }, row) => columns.map((column, slot) => ({ id: `${row}:${slot}`, row, slot, column })));
@@ -114,7 +116,11 @@ function createLevelConfig(snapshot: LevelSnapshot): HexaSortLevelConfig {
     title,
     targetScore,
     target: { type: targetType, ...(targetType === "color" ? { colorId: targetColor } : {}) },
-    board: { columnCount, rowCount, rows, cells: boardCells },
+    board: { columnCount, rowCount, rows, cells: boardCells.map((cell) => {
+      const editorCellId = Array.from(exportedCellIds.entries()).find(([, exportedId]) => exportedId === cell.id)?.[0];
+      const lock = editorCellId ? emptyCellLocks[editorCellId] : undefined;
+      return { ...cell, ...(lock ? { blocker: "lock" as const, unlockHexCount: lock.unlockHexCount } : {}) };
+    }) },
     initialStacks: Object.entries(placements)
       .filter(([id]) => active.has(id))
       .map(([id, placement], index) => ({ id: `board-stack-${index + 1}`, cellId: exportedCellIds.get(id) ?? id, packId: placement.packId, items: packs.find((pack) => pack.id === placement.packId)?.items ?? [], ...(placement.locked ? { blocker: "lock" as const, unlockHexCount: placement.unlockHexCount ?? 10 } : {}) })),
@@ -145,6 +151,7 @@ export default function LevelConstructor() {
   const [packs, setPacks] = useState(INITIAL_PACKS);
   const [active, setActive] = useState(new Set(DEFAULT_CELLS));
   const [placements, setPlacements] = useState<Record<string, Placement>>({});
+  const [emptyCellLocks, setEmptyCellLocks] = useState<Record<string, EmptyCellLock>>({});
   const [selectedPack, setSelectedPack] = useState(INITIAL_PACKS[0].id);
   const [columnCount, setColumnCount] = useState(DEFAULT_COLUMN_COUNT);
   const [rowCount, setRowCount] = useState(DEFAULT_ROW_COUNT);
@@ -185,8 +192,8 @@ export default function LevelConstructor() {
   const randomWeightTotal = useMemo(() => randomPacks.reduce((sum, entry) => sum + Math.max(0, entry.weight), 0), [randomPacks]);
   const config = useMemo(() => createLevelConfig({
     levelId, title, targetScore, targetType, targetColor, columnCount, rowCount,
-    active: [...active], placements, colors, packs, selectedPack, queue, randomPacks,
-  }), [active, colors, columnCount, levelId, packs, placements, queue, randomPacks, rowCount, selectedPack, targetColor, targetScore, targetType, title]);
+    active: [...active], placements, emptyCellLocks, colors, packs, selectedPack, queue, randomPacks,
+  }), [active, colors, columnCount, emptyCellLocks, levelId, packs, placements, queue, randomPacks, rowCount, selectedPack, targetColor, targetScore, targetType, title]);
 
   function resizeBoard(nextColumnCount: number, nextRowCount: number) {
     const columns = Math.min(MAX_COLUMN_COUNT, Math.max(MIN_BOARD_SIZE, nextColumnCount));
@@ -200,6 +207,7 @@ export default function LevelConstructor() {
     setRowCount(rows);
     setActive((current) => new Set([...current].filter(isInside)));
     setPlacements((current) => Object.fromEntries(Object.entries(current).filter(([id]) => isInside(id))));
+    setEmptyCellLocks((current) => Object.fromEntries(Object.entries(current).filter(([id]) => isInside(id))));
     setContextMenu((current) => current && isInside(current.cellId) ? current : null);
   }
 
@@ -209,6 +217,7 @@ export default function LevelConstructor() {
       if (next.has(id)) {
         next.delete(id);
         setPlacements((value) => { const copy = { ...value }; delete copy[id]; return copy; });
+        setEmptyCellLocks((value) => { const copy = { ...value }; delete copy[id]; return copy; });
       } else next.add(id);
       return next;
     });
@@ -221,15 +230,23 @@ export default function LevelConstructor() {
 
   function toggleLock(id: string) {
     const placement = placements[id];
-    if (!placement) return;
-    setPlacements((value) => ({ ...value, [id]: { ...placement, locked: !placement.locked, unlockHexCount: placement.unlockHexCount ?? 10 } }));
+    if (placement) {
+      setPlacements((value) => ({ ...value, [id]: { ...placement, locked: !placement.locked, unlockHexCount: placement.unlockHexCount ?? 10 } }));
+    } else if (active.has(id)) {
+      setEmptyCellLocks((value) => {
+        const next = { ...value };
+        if (next[id]) delete next[id];
+        else next[id] = { unlockHexCount: 10 };
+        return next;
+      });
+    }
     setContextMenu(null);
   }
 
   function updateUnlockHexCount(id: string, count: number) {
-    setPlacements((current) => current[id]
-      ? { ...current, [id]: { ...current[id], unlockHexCount: Math.max(1, Math.round(count) || 1) } }
-      : current);
+    const unlockHexCount = Math.max(1, Math.round(count) || 1);
+    if (placements[id]) setPlacements((current) => ({ ...current, [id]: { ...current[id], unlockHexCount } }));
+    else setEmptyCellLocks((current) => current[id] ? { ...current, [id]: { unlockHexCount } } : current);
   }
 
   function savePack() {
@@ -306,7 +323,7 @@ export default function LevelConstructor() {
   }
 
   function dropPack(id: string, packId: string) {
-    if (!active.has(id) || !packs.some((pack) => pack.id === packId)) return;
+    if (!active.has(id) || emptyCellLocks[id] || !packs.some((pack) => pack.id === packId)) return;
     setPlacements((current) => ({ ...current, [id]: { packId, locked: false, unlockHexCount: 10 } }));
     setSelectedPack(packId);
     setDragTargetCell(null);
@@ -394,7 +411,7 @@ export default function LevelConstructor() {
     }
     const snapshot: LevelSnapshot = {
       levelId: id, title, targetScore, targetType, targetColor, columnCount, rowCount,
-      active: [...active], placements, colors, packs, selectedPack, queue, randomPacks,
+      active: [...active], placements, emptyCellLocks, colors, packs, selectedPack, queue, randomPacks,
     };
     const saved: SavedLevel = { id, title: savedTitle, updatedAt: new Date().toISOString(), snapshot };
     const next = [...savedLevels.filter((level) => level.id !== id && level.id !== levelWithSameTitle?.id), saved]
@@ -424,6 +441,7 @@ export default function LevelConstructor() {
     setRowCount(value.rowCount);
     setActive(new Set(value.active));
     setPlacements(value.placements);
+    setEmptyCellLocks(value.emptyCellLocks ?? {});
     setColors(value.colors);
     setPacks(value.packs);
     setSelectedPack(value.selectedPack);
@@ -478,14 +496,14 @@ export default function LevelConstructor() {
             <div className="board-stage">
               <div className="hex-board coordinate-grid" style={{ position: "relative", display: "block", width: columnCount * 130 + 72, height: rowCount * 36 + 48, padding: 0 }}>
                 {Array.from({ length: rowCount }, (_, row) => Array.from({ length: slotsInRow(row, columnCount) }, (_, slot) => {
-                  const id = cellId(row, slot); const isActive = active.has(id); const placement = placements[id]; const pack = placement && packs.find((item) => item.id === placement.packId);
+                  const id = cellId(row, slot); const isActive = active.has(id); const placement = placements[id]; const emptyLock = emptyCellLocks[id]; const cellLock = placement?.locked ? { unlockHexCount: placement.unlockHexCount ?? 10 } : emptyLock; const pack = placement && packs.find((item) => item.id === placement.packId);
                   const column = cellColumn(row, slot, columnCount);
                   return <div className={`hex-cell-position ${placement ? "has-placement" : ""}`} key={id} style={{ position: "absolute", left: `calc(50% + ${column * 65}px)`, top: row * 36, width: 84, height: 72, transform: "translateX(-50%)" }}>
-                    <button style={{ width: 84, height: 72 }} className={`hex-cell ${isActive ? "is-active" : ""} ${placement ? "has-pack" : ""} ${draggingPackId && isActive ? "can-drop" : ""} ${dragTargetCell === id ? "is-drop-target" : ""}`} onClick={() => handleBoardClick(id)} onDragEnter={(event) => { if (!isActive || !draggingPackId) return; event.preventDefault(); setDragTargetCell(id); }} onDragOver={(event) => { if (!isActive || !draggingPackId) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragTargetCell((current) => current === id ? null : current); }} onDrop={(event) => { event.preventDefault(); const packId = event.dataTransfer.getData("application/x-hexa-pack") || draggingPackId; if (packId) dropPack(id, packId); }} onContextMenu={(event) => { event.preventDefault(); if (placement) setContextMenu({ cellId: id, x: event.clientX, y: event.clientY }); }} title={`${id} · column ${column}${pack ? ` — ${pack.name}. Правый клик — действия` : ""}`}>
+                    <button style={{ width: 84, height: 72 }} className={`hex-cell ${isActive ? "is-active" : ""} ${placement ? "has-pack" : ""} ${draggingPackId && isActive && !emptyLock ? "can-drop" : ""} ${dragTargetCell === id ? "is-drop-target" : ""} ${emptyLock ? "is-locked-empty" : ""}`} onClick={() => handleBoardClick(id)} onDragEnter={(event) => { if (!isActive || emptyLock || !draggingPackId) return; event.preventDefault(); setDragTargetCell(id); }} onDragOver={(event) => { if (!isActive || emptyLock || !draggingPackId) return; event.preventDefault(); event.dataTransfer.dropEffect = "copy"; }} onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragTargetCell((current) => current === id ? null : current); }} onDrop={(event) => { event.preventDefault(); const packId = event.dataTransfer.getData("application/x-hexa-pack") || draggingPackId; if (packId) dropPack(id, packId); }} onContextMenu={(event) => { event.preventDefault(); if (isActive) setContextMenu({ cellId: id, x: event.clientX, y: event.clientY }); }} title={`${id} · column ${column}${pack ? ` — ${pack.name}. Правый клик — действия` : emptyLock ? " — ячейка заблокирована" : ""}`}>
                       {pack && <PieceStack items={pack.items} colors={colors} />}
                       {!isActive && <span className="plus">+</span>}
                     </button>
-                    {placement && <div className="cell-lock-control" onContextMenu={(event) => { event.preventDefault(); setContextMenu({ cellId: id, x: event.clientX, y: event.clientY }); }}><span className={`lock ${placement.locked ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); toggleLock(id); }} title={placement.locked ? `Замок включён. Нужно собрать ${placement.unlockHexCount ?? 10} гексов. Правый клик — изменить количество.` : "Замок выключен. Нажмите, чтобы включить. Правый клик — дополнительные настройки."}>🔒</span>{placement.locked && <span className="lock-count" title={`Для снятия замка нужно собрать ${placement.unlockHexCount ?? 10} гексов. Правый клик — изменить количество.`}>{placement.unlockHexCount ?? 10}</span>}</div>}
+                    {isActive && <div className="cell-lock-control" onContextMenu={(event) => { event.preventDefault(); setContextMenu({ cellId: id, x: event.clientX, y: event.clientY }); }}><span className={`lock ${cellLock ? "locked" : ""}`} onClick={(event) => { event.stopPropagation(); toggleLock(id); }} title={cellLock ? `Замок включён. Нужно собрать рядом ${cellLock.unlockHexCount} гексов. Правый клик — изменить количество.` : "Замок выключен. Нажмите, чтобы включить."}>🔒</span>{cellLock && <span className="lock-count">{cellLock.unlockHexCount}</span>}</div>}
                   </div>;
                 }))}
               </div>
@@ -560,7 +578,7 @@ export default function LevelConstructor() {
         </div>
         <footer><span>{packDraft.items.length} элементов</span><div><button className="modal-cancel" onClick={() => setPackDraft(null)}>Отмена</button><button className="primary" disabled={packDraft.items.length === 0} onClick={savePack}>{packDraft.id ? "Сохранить" : "Создать пачку"}</button></div></footer>
       </section></div>}
-      {contextMenu && placements[contextMenu.cellId] && <div className="context-backdrop" onPointerDown={() => setContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setContextMenu(null); }}><div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()}><small>Действия с пачкой</small><button onClick={() => toggleLock(contextMenu.cellId)}><span>{placements[contextMenu.cellId].locked ? "🔓" : "🔒"}</span>{placements[contextMenu.cellId].locked ? "Снять замок" : "Установить замок"}</button>{placements[contextMenu.cellId].locked && <label className="lock-count-field"><span>Гексов для снятия</span><input key={`${contextMenu.cellId}-${placements[contextMenu.cellId].unlockHexCount ?? 10}`} type="number" min="1" defaultValue={placements[contextMenu.cellId].unlockHexCount ?? 10} onBlur={(event) => updateUnlockHexCount(contextMenu.cellId, Number(event.target.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>}<button className="danger" onClick={() => { setPlacements((value) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== contextMenu.cellId))); setContextMenu(null); }}><span>×</span>Убрать пачку</button></div></div>}
+      {contextMenu && (() => { const placement = placements[contextMenu.cellId]; const emptyLock = emptyCellLocks[contextMenu.cellId]; const locked = placement?.locked || Boolean(emptyLock); const unlockHexCount = placement?.unlockHexCount ?? emptyLock?.unlockHexCount ?? 10; return <div className="context-backdrop" onPointerDown={() => setContextMenu(null)} onContextMenu={(event) => { event.preventDefault(); setContextMenu(null); }}><div className="context-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()}><small>{placement ? "Действия с пачкой" : "Действия с ячейкой"}</small><button onClick={() => toggleLock(contextMenu.cellId)}><span>{locked ? "🔓" : "🔒"}</span>{locked ? "Снять замок" : "Установить замок"}</button>{locked && <label className="lock-count-field"><span>Гексов для снятия</span><input key={`${contextMenu.cellId}-${unlockHexCount}`} type="number" min="1" defaultValue={unlockHexCount} onBlur={(event) => updateUnlockHexCount(contextMenu.cellId, Number(event.target.value))} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }} /></label>}{placement && <button className="danger" onClick={() => { setPlacements((value) => Object.fromEntries(Object.entries(value).filter(([key]) => key !== contextMenu.cellId))); setContextMenu(null); }}><span>×</span>Убрать пачку</button>}</div></div>; })()}
       {colorDraft && <div className="modal-backdrop" onPointerDown={() => setColorDraft(null)}><section className="pack-modal color-modal" onPointerDown={(event) => event.stopPropagation()}>
         <header><div><p className="eyebrow">Палитра</p><h2>{colorDraft.originalId ? "Редактирование цвета" : "Новый цвет"}</h2></div><button onClick={() => setColorDraft(null)} aria-label="Закрыть">×</button></header>
         <div className="color-editor">

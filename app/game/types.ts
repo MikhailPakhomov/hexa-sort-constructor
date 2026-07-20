@@ -17,7 +17,7 @@ export type HexaSortLevelConfig = {
     columnCount?: number;
     rowCount?: number;
     rows: Array<{ columns: number[] }>;
-    cells: Array<{ id: HexaSortCellId; row: number; slot: number; column: number }>;
+    cells: Array<{ id: HexaSortCellId; row: number; slot: number; column: number; blocker?: "lock"; unlockHexCount?: number }>;
   };
   initialStacks: Array<HexaSortStackConfig & { cellId: HexaSortCellId; blocker?: "lock"; unlockHexCount?: number }>;
   handStacks: HexaSortStackConfig[];
